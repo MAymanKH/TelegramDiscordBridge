@@ -115,9 +115,9 @@ async def main():
                             replied_to_sender TEXT,
                             sent_at INT
                         )''')
-    # Fire-and-forget background polling tasks
-    asyncio.create_task(detect_text_change())
-    asyncio.create_task(detect_new_files())
+    # Run background polling tasks concurrently, blocking main() so the client stays alive
+    async with app:
+        await asyncio.gather(detect_text_change(), detect_new_files())
 
 
 # --- Incoming Telegram Messages ---
