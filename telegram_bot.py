@@ -21,15 +21,19 @@ app = Client("my_bot", api_id=api_id, api_hash=api_hash)
 
 SOURCE_CHATS = [target['telegram_chat_id'] for target in bridges]
 
+# Track processed media groups to avoid duplicate downloads (Issue #4 fix)
+_processed_media_groups = set()
+
 
 # --- Helper Functions ---
 
 def get_sender_name(message, fallback="Unknown"):
     """Extract sender display name from a Pyrogram message."""
     try:
-        return message.from_user.first_name + " " + message.from_user.last_name
-    except TypeError:
-        return message.from_user.username
+        first = message.from_user.first_name or ""
+        last = message.from_user.last_name or ""
+        name = f"{first} {last}".strip()
+        return name if name else (message.from_user.username or fallback)
     except AttributeError:
         return fallback
 
@@ -80,8 +84,14 @@ async def my_handler(client: Client, message: types.Message):
     db_file_path = "messages/telegram/text.db"
     json_file_path = "messages/telegram/attachments.json"
 
-    # --- Media Group ---
+    # --- Media Group (Issue #4 fix: deduplicate) ---
     if message.media_group_id:
+        if message.media_group_id in _processed_media_groups:
+            return
+        _processed_media_groups.add(message.media_group_id)
+        if len(_processed_media_groups) > 1000:
+            _processed_media_groups.clear()
+
         media_group = await app.get_media_group(message.chat.id, message.id)
         for i, media in enumerate(media_group):
             await asyncio.sleep(0.5)
@@ -128,25 +138,24 @@ def check_chat(chat_name):
 
 async def detect_text_change():
     db_file = "messages/discord/text.db"
-    latest_timestamp = 0
+    last_id = 0
 
     while True:
         await asyncio.sleep(0.2)
         try:
             async with aiosqlite.connect(db_file) as db:
-                async with db.execute('SELECT MAX(sent_at) FROM messages') as cursor:
+                async with db.execute('SELECT MAX(id) FROM messages') as cursor:
                     row = await cursor.fetchone()
-                    if row[0] is None or row[0] <= latest_timestamp:
+                    if row[0] is None or row[0] <= last_id:
                         continue
-                    latest_timestamp = row[0]
+                    last_id = row[0]
                     async with db.execute(
-                        'SELECT content, sender, chat FROM messages WHERE sent_at = ?',
-                        (latest_timestamp,)
+                        'SELECT content, sender, chat FROM messages WHERE id = ?',
+                        (last_id,)
                     ) as cursor:
                         row = await cursor.fetchone()
                         content, sender, chat = row
         except Exception as e:
-            print(f"Error in detect_text_change: {e}")
             continue
 
         if not content:
@@ -204,7 +213,8 @@ async def detect_new_files():
                 elif file_extension == ".ogg":
                     await app.send_voice(chat_id, file_path, caption=f"**{sender}:**")
                 elif file_extension == ".webp":
-                    pass  # Webp stickers not supported for re-sending
+                    # Issue #8 fix: send webp as document instead of silently dropping
+                    await app.send_document(chat_id, file_path, caption=f"**{sender}:**")
                 elif file_extension in (".pdf", ".apk"):
                     await app.send_document(chat_id, file_path, caption=f"**{sender}:**")
             finally:
