@@ -16,8 +16,16 @@ bridges = settings['bridges']
 
 api_id = telegram_info['api_id']
 api_hash = telegram_info['api_hash']
+bot_token = telegram_info.get('bot_token')
+phone_number = telegram_info.get('phone')
 
-app = Client("my_bot", api_id=api_id, api_hash=api_hash)
+if bot_token:
+    app = Client("my_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
+elif phone_number:
+    app = Client("my_bot", api_id=api_id, api_hash=api_hash, phone_number=phone_number)
+else:
+    # Falls back to interactive session login
+    app = Client("my_bot", api_id=api_id, api_hash=api_hash)
 
 SOURCE_CHATS = [target['telegram_chat_id'] for target in bridges]
 

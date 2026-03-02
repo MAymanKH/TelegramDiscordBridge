@@ -2,6 +2,10 @@ telegram:
   # Get API ID and API Hash https://core.telegram.org/api/obtaining_api_id
   api_id: 
   api_hash: 
+  # Authentication: provide ONE of the following (both are optional).
+  # If neither is set, an interactive session login will be used.
+  # bot_token:    # Bot token from @BotFather (starts the client as a bot)
+  # phone:        # Phone number in international format e.g. +12025551234 (starts as a user)
 
 discord:
   # Get the token and app ID from your bot's info in https://discord.com/developers/applications/
