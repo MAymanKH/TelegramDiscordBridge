@@ -6,16 +6,11 @@ import asyncio
 import yaml
 import aiosqlite
 from pyrogram import Client, filters, types
+import utils
 
 
 # --- Configuration ---
-def load_settings():
-    """Load settings from settings.yaml."""
-    with open('settings.yaml', 'r') as file:
-        return yaml.safe_load(file)
-
-
-settings = load_settings()
+settings = utils.load_settings()
 telegram_info = settings['telegram']
 bridges = settings['bridges']
 
@@ -58,63 +53,12 @@ def get_media_info(media):
         return "sticker", ".webp"
     return "file", ""
 
-
-def get_unique_filepath(directory, file_name, file_type):
-    """Generate a unique file path, appending a counter if the file already exists.
-    file_type should include the leading dot, e.g. '.png'.
-    """
-    file_path = os.path.join(directory, f"{file_name}{file_type}")
-    if not os.path.isfile(file_path):
-        return file_path
-    file_count = 2
-    while True:
-        candidate = os.path.join(directory, f"{file_name}_({file_count}){file_type}")
-        if not os.path.isfile(candidate):
-            return candidate
-        file_count += 1
-
-
-def save_attachment_json(json_file_path, file_path, sender, chat):
-    """Save attachment metadata to a JSON file."""
-    with open(json_file_path, "r", encoding="utf8") as f:
-        data = json.load(f)
-    with open(json_file_path, "w", encoding="utf8") as f:
-        data["message"] = {
-            "path": file_path,
-            "sender": sender,
-            "chat": chat,
-        }
-        json.dump(data, f, sort_keys=True, indent=4, ensure_ascii=False)
-
-
-async def save_text_to_db(db_path, content, sender, chat,
-                          replied_to_text=None, replied_to_sender=None):
-    """Insert a text message into the SQLite database."""
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute(
-            '''INSERT INTO messages
-               (content, sender, chat, replied_to_text, replied_to_sender, sent_at)
-               VALUES (?, ?, ?, ?, ?, ?)''',
-            (content, sender, chat, replied_to_text, replied_to_sender, int(time.time()))
-        )
-        await db.commit()
-
-
 # --- Startup ---
 
 async def main():
     print("Telegram bot is alive")
     # Create the DB table before starting background tasks
-    async with aiosqlite.connect("messages/telegram/text.db") as db:
-        await db.execute('''CREATE TABLE IF NOT EXISTS messages (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            content TEXT,
-                            sender TEXT,
-                            chat TEXT,
-                            replied_to_text TEXT,
-                            replied_to_sender TEXT,
-                            sent_at INT
-                        )''')
+    await utils.init_db("messages/telegram/text.db")
     # Run background polling tasks concurrently, blocking main() so the client stays alive
     async with app:
         await asyncio.gather(detect_text_change(), detect_new_files())
@@ -143,19 +87,19 @@ async def my_handler(client: Client, message: types.Message):
             await asyncio.sleep(0.5)
             file_name, file_type = get_media_info(media)
             file_path = f"messages/telegram/{file_name}_({i}){file_type}"
-            save_attachment_json(json_file_path, file_path, sender, chname)
+            utils.save_attachment_json(json_file_path, file_path, sender, chname)
             await client.download_media(media, file_name=file_path)
         if message.caption:
-            await save_text_to_db(db_file_path, message.caption, sender, chname)
+            await utils.save_text_to_db(db_file_path, message.caption, sender, chname)
 
     # --- Single Attachment ---
     elif message.media:
         file_name, file_type = get_media_info(message)
-        file_path = get_unique_filepath("messages/telegram", file_name, file_type)
+        file_path = utils.get_unique_filepath("messages/telegram", file_name, file_type)
         await client.download_media(message, file_path)
-        save_attachment_json(json_file_path, file_path, sender, chname)
+        utils.save_attachment_json(json_file_path, file_path, sender, chname)
         if message.caption:
-            await save_text_to_db(db_file_path, message.caption, sender, chname)
+            await utils.save_text_to_db(db_file_path, message.caption, sender, chname)
 
     # --- Text Message ---
     else:
@@ -166,7 +110,7 @@ async def my_handler(client: Client, message: types.Message):
         else:
             replied_to_text = replied_to.text
             replied_to_sender = get_sender_name(replied_to, fallback=chname)
-        await save_text_to_db(
+        await utils.save_text_to_db(
             db_file_path, message.text, sender, chname,
             replied_to_text, replied_to_sender
         )
@@ -222,10 +166,6 @@ async def detect_text_change():
 
 
 async def detect_new_files():
-    PHOTO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif"}
-    MEDIA_EXTENSIONS = PHOTO_EXTENSIONS | {".webp", ".mp4", ".mp3", ".ogg", ".pdf", ".apk"}
-    IGNORED_FILES = {"attachments.json", "text.json", "text.db"}
-
     while True:
         await asyncio.sleep(1)
         for file in os.listdir("messages/discord"):
@@ -234,8 +174,8 @@ async def detect_new_files():
             if file_extension == ".temp":
                 continue
 
-            if file_extension not in MEDIA_EXTENSIONS:
-                if file not in IGNORED_FILES:
+            if file_extension not in utils.MEDIA_EXTENSIONS:
+                if file not in utils.IGNORED_FILES:
                     os.remove(f"messages/discord/{file}")
                 continue
 
@@ -255,7 +195,7 @@ async def detect_new_files():
                         chat_id,
                         f"**{sender}:** File size is over 8MB, can't send it."
                     )
-                elif file_extension in PHOTO_EXTENSIONS:
+                elif file_extension in utils.PHOTO_EXTENSIONS:
                     await app.send_photo(chat_id, file_path, caption=f"**{sender}:**")
                 elif file_extension == ".mp4":
                     await app.send_video(chat_id, file_path, caption=f"**{sender}:**")
