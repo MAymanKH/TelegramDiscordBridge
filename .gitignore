@@ -1,0 +1,17 @@
+# Secrets & session
+settings.yaml
+*.session
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Message storage (runtime data)
+messages/
+
+# IDE
+.vscode/
+.idea/
