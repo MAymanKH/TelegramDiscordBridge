@@ -29,26 +29,25 @@ def check_chat(chat_name):
 
 async def detect_text_change():
     db_file = "messages/telegram/text.db"
-    latest_timestamp = 0
+    last_id = 0
 
     while True:
         await asyncio.sleep(0.2)
         try:
             async with aiosqlite.connect(db_file) as db:
-                async with db.execute('SELECT MAX(sent_at) FROM messages') as cursor:
+                async with db.execute('SELECT MAX(id) FROM messages') as cursor:
                     row = await cursor.fetchone()
-                    if row[0] is None or row[0] <= latest_timestamp:
+                    if row[0] is None or row[0] <= last_id:
                         continue
-                    latest_timestamp = row[0]
+                    last_id = row[0]
                     async with db.execute(
                         'SELECT content, sender, chat, replied_to_text, replied_to_sender '
-                        'FROM messages WHERE sent_at = ?',
-                        (latest_timestamp,)
+                        'FROM messages WHERE id = ?',
+                        (last_id,)
                     ) as cursor:
                         row = await cursor.fetchone()
                         content, sender, chat, replied_to_text, replied_to_sender = row
         except Exception as e:
-            print(f"Error in detect_text_change: {e}")
             continue
 
         channel = check_chat(chat)
@@ -171,18 +170,19 @@ async def on_message(message: discord.Message):
 
     sender = message.author.display_name
 
-    # Download attachments if present
-    if message.attachments:
-        original_name = message.attachments[0].filename
+    # Download ALL attachments (Issue #5 fix)
+    for attachment in message.attachments:
+        original_name = attachment.filename
         file_name, file_type = os.path.splitext(original_name)
-        if file_type == ".webp":
+        # Issue #8 fix: convert webp to png for better Telegram compatibility
+        if file_type.lower() == ".webp":
             file_type = ".png"
         file_path = utils.get_unique_filepath("messages/discord", file_name, file_type)
 
         # Save attachment info in attachments.json
         json_file_path = "messages/discord/attachments.json"
         utils.save_attachment_json(json_file_path, file_path, sender, chname)
-        await message.attachments[0].save(fp=file_path)
+        await attachment.save(fp=file_path)
 
     # Save text messages to DB (skip empty content from attachment-only messages)
     if message.content:
