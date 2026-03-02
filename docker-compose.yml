@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  telegram-discord-bridge:
+    build: .
+    container_name: telegram-discord-bridge
+    restart: unless-stopped
+    
+    # Mount volumes for persistent data
+    volumes:
+      - ./settings.yaml:/app/settings.yaml:ro  # Read-only config
+      - telegram-sessions:/app/sessions        # Telegram session files
+      - message-data:/app/messages            # Message attachments
+    
+    # Environment variables (optional - can also use settings.yaml)
+    environment:
+      - PYTHONUNBUFFERED=1
+    
+    # Optional: Override command for debugging
+    # command: python -u main.py
+
+# Named volumes for persistent data
+volumes:
+  telegram-sessions:
+    driver: local
+  message-data:
+    driver: local
