@@ -46,7 +46,7 @@ async def save_text_to_db(db_path, content, sender, chat, replied_to_text=None, 
             '''INSERT INTO messages
                (content, sender, chat, replied_to_text, replied_to_sender, sent_at)
                VALUES (?, ?, ?, ?, ?, ?)''',
-            (content, sender, chat, replied_to_text, replied_to_sender, int(time.time()))
+            (content, sender, chat, replied_to_text, replied_to_sender, int(time.time() * 1000))
         )
         await db.commit()
 
