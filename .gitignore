@@ -1,6 +1,7 @@
 # Secrets & session
 settings.yaml
 *.session
+*.session-journal
 
 # Python
 __pycache__/
