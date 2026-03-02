@@ -111,3 +111,4 @@ docker-compose logs -f
 - Make sure the Telegram bot/account has **read access** to the source chats (add it as a member/admin).
 - Files larger than **8 MB** cannot be forwarded via the Discord API; the bridge will send a notification message instead.
 - `.webp` files sent from Discord are re-labeled as `.png` for better Telegram compatibility.
+- This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](https://github.com/MAymanKH/TelegramDiscordBridge/blob/master/LICENSE) file for details.
