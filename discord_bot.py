@@ -7,36 +7,15 @@ import yaml
 import aiosqlite
 import discord
 from discord.ext import commands
+import utils
 
 
 # --- Configuration ---
-
-def load_settings():
-    """Load settings from settings.yaml."""
-    with open('settings.yaml', 'r') as file:
-        return yaml.safe_load(file)
-
-
-settings = load_settings()
+settings = utils.load_settings()
 bridges = settings['bridges']
 
 
 # --- Helper Functions ---
-
-def get_unique_filepath(directory, file_name, file_type):
-    """Generate a unique file path, appending a counter if the file already exists.
-    file_type should include the leading dot, e.g. '.png'.
-    """
-    file_path = os.path.join(directory, f"{file_name}{file_type}")
-    if not os.path.isfile(file_path):
-        return file_path
-    file_count = 2
-    while True:
-        candidate = os.path.join(directory, f"{file_name}_({file_count}){file_type}")
-        if not os.path.isfile(candidate):
-            return candidate
-        file_count += 1
-
 
 def check_chat(chat_name):
     """Look up the Discord channel for a bridge by name."""
@@ -105,12 +84,6 @@ async def detect_text_change():
 
 
 async def detect_new_files():
-    MEDIA_EXTENSIONS = {
-        ".png", ".jpg", ".jpeg", ".gif", ".webp",
-        ".mp4", ".mp3", ".ogg", ".pdf", ".apk"
-    }
-    IGNORED_FILES = {"attachments.json", "text.json", "text.db"}
-
     while True:
         await asyncio.sleep(0.5)
         for file in os.listdir("messages/telegram"):
@@ -119,8 +92,8 @@ async def detect_new_files():
             if file_extension == ".temp":
                 continue
 
-            if file_extension not in MEDIA_EXTENSIONS:
-                if file not in IGNORED_FILES:
+            if file_extension not in utils.MEDIA_EXTENSIONS:
+                if file not in utils.IGNORED_FILES:
                     os.remove(f"messages/telegram/{file}")
                 continue
 
@@ -174,14 +147,7 @@ class MyBot(commands.Bot):
     async def on_ready(self):
         print("Discord bot is ready")
         # Create the DB table before starting background tasks
-        async with aiosqlite.connect("messages/discord/text.db") as db:
-            await db.execute('''CREATE TABLE IF NOT EXISTS messages (
-                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                content TEXT,
-                                sender TEXT,
-                                chat TEXT,
-                                sent_at INT
-                            )''')
+        await utils.init_db("messages/discord/text.db")
         # Fire-and-forget background polling tasks
         asyncio.create_task(detect_text_change())
         asyncio.create_task(detect_new_files())
@@ -211,32 +177,24 @@ async def on_message(message: discord.Message):
         file_name, file_type = os.path.splitext(original_name)
         if file_type == ".webp":
             file_type = ".png"
-        file_path = get_unique_filepath("messages/discord", file_name, file_type)
+        file_path = utils.get_unique_filepath("messages/discord", file_name, file_type)
 
         # Save attachment info in attachments.json
         json_file_path = "messages/discord/attachments.json"
-        with open(json_file_path, "r", encoding="utf8") as f:
-            data = json.load(f)
-        with open(json_file_path, "w", encoding="utf8") as f:
-            data["message"] = {
-                "path": file_path,
-                "sender": sender,
-                "chat": chname,
-            }
-            json.dump(data, f, sort_keys=True, indent=4, ensure_ascii=False)
+        utils.save_attachment_json(json_file_path, file_path, sender, chname)
         await message.attachments[0].save(fp=file_path)
 
     # Save text messages to DB (skip empty content from attachment-only messages)
     if message.content:
         db_file_path = "messages/discord/text.db"
-        async with aiosqlite.connect(db_file_path) as db:
-            await db.execute(
-                '''INSERT INTO messages (content, sender, chat, sent_at)
-                   VALUES (?, ?, ?, ?)''',
-                (message.content, sender, chname, int(time.time()))
-            )
-            await db.commit()
+        replied_to_text = None
+        replied_to_sender = None
+        
+        if message.reference and getattr(message.reference, 'resolved', None) and isinstance(message.reference.resolved, discord.Message):
+            replied_to_text = message.reference.resolved.content
+            replied_to_sender = message.reference.resolved.author.display_name
 
+        await utils.save_text_to_db(db_file_path, message.content, sender, chname, replied_to_text, replied_to_sender)
 
 token = settings['discord']['token']
 bot.run(token)
