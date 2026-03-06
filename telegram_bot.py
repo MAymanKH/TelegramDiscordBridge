@@ -1,14 +1,13 @@
-import time
 import json
 import os
 import asyncio
-import yaml
 import aiosqlite
-from pyrogram import Client, filters, types
-import utils
 
 # Ensure an event loop exists for Pyrogram in Python 3.14+
 asyncio.set_event_loop(asyncio.new_event_loop())
+
+from pyrogram import Client, filters, types
+import utils
 
 # --- Configuration ---
 settings = utils.load_settings()
