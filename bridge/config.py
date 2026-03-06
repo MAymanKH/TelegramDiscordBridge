@@ -2,24 +2,17 @@
 Configuration loader and path constants.
 """
 
-import json
 import os
 import yaml
 
 # Directory / file path constants
-
 MESSAGES_DIR = "messages"
 TELEGRAM_DIR = os.path.join(MESSAGES_DIR, "telegram")
 DISCORD_DIR = os.path.join(MESSAGES_DIR, "discord")
-
 TELEGRAM_DB = os.path.join(TELEGRAM_DIR, "text.db")
 DISCORD_DB = os.path.join(DISCORD_DIR, "text.db")
 
-TELEGRAM_ATTACHMENTS_JSON = os.path.join(TELEGRAM_DIR, "attachments.json")
-DISCORD_ATTACHMENTS_JSON = os.path.join(DISCORD_DIR, "attachments.json")
-
 # Settings
-
 def load_settings(path: str = "settings.yaml") -> dict:
     """Load and return the YAML settings file."""
     with open(path, "r", encoding="utf-8") as fh:
@@ -30,12 +23,8 @@ def get_bridges(settings: dict) -> list[dict]:
     return settings["bridges"]
 
 # Bootstrap
-
 def ensure_directories() -> None:
-    """Create required message directories and seed empty JSON files."""
+    """Create required message directories."""
     for folder in (TELEGRAM_DIR, DISCORD_DIR):
         os.makedirs(folder, exist_ok=True)
-    for json_path in (TELEGRAM_ATTACHMENTS_JSON, DISCORD_ATTACHMENTS_JSON):
-        if not os.path.isfile(json_path):
-            with open(json_path, "w", encoding="utf-8") as fh:
-                json.dump({}, fh)
+

@@ -12,12 +12,10 @@ from bridge.logger import get_logger
 logger = get_logger("discord")
 
 # Configuration
-
 settings = config.load_settings()
 bridges = config.get_bridges(settings)
 
 # Bot class
-
 class BridgeBot(commands.Bot):
     """A ``commands.Bot`` subclass wired into the bridge system."""
 
@@ -36,13 +34,12 @@ class BridgeBot(commands.Bot):
             polling.poll_text_db(config.TELEGRAM_DB, _send_text),
         )
         asyncio.create_task(
-            polling.poll_new_files(config.TELEGRAM_DIR, config.TELEGRAM_ATTACHMENTS_JSON, _send_file),
+            polling.poll_attachments_db(config.TELEGRAM_DB, _send_file),
         )
 
 bot = BridgeBot()
 
 # Helpers
-
 def _discord_channel_for(bridge_name: str) -> discord.TextChannel | None:
     """Return the Discord channel object for a bridge by name, or ``None``."""
     for b in bridges:
@@ -58,7 +55,6 @@ def _bridge_name_for_channel(channel_id: int) -> str | None:
     return None
 
 # Incoming Discord messages
-
 @bot.event
 async def on_message(message: discord.Message):
     if message.author == bot.user:
@@ -79,8 +75,8 @@ async def on_message(message: discord.Message):
         if file_type.lower() == ".webp":
             file_type = ".png"
         file_path = media.get_unique_filepath(config.DISCORD_DIR, file_name, file_type)
-        media.save_attachment_json(config.DISCORD_ATTACHMENTS_JSON, file_path, sender, chname)
         await attachment.save(fp=file_path)
+        await database.save_attachment_to_db(config.DISCORD_DB, file_path, file_type, sender, chname)
 
     # Save text messages to DB
     if message.content:
@@ -96,9 +92,7 @@ async def on_message(message: discord.Message):
         )
 
 # Outgoing callbacks (Telegram → Discord)
-
 MESSAGE_CHUNK_LIMIT = 1800
-
 async def _send_text(content, sender, chat, replied_to_text, replied_to_sender):
     """Callback for :func:`polling.poll_text_db` — send text to Discord."""
     channel = _discord_channel_for(chat)
@@ -128,7 +122,7 @@ async def _send_text(content, sender, chat, replied_to_text, replied_to_sender):
 
 
 async def _send_file(file_path, file_extension, sender, chat):
-    """Callback for :func:`polling.poll_new_files` — send a file to Discord."""
+    """Callback for :func:`polling.poll_attachments_db` — send a file to Discord."""
     channel = _discord_channel_for(chat)
     if channel is None:
         logger.warning("No Discord channel found for bridge '%s'", chat)
@@ -149,7 +143,6 @@ async def _send_file(file_path, file_extension, sender, chat):
             await channel.send(file=discord.File(file_path), content=f"*{sender}:* [{file_name}]")
 
 # Entry point
-
 async def run() -> None:
     """Start the Discord bot (blocking)."""
     token = settings["discord"]["token"]

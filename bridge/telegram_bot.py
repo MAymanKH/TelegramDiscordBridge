@@ -6,10 +6,8 @@ import asyncio
 import os
 
 # Pyrogram calls asyncio.get_event_loop() at import time. Python 3.14
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
+try: asyncio.get_event_loop()
+except RuntimeError: asyncio.set_event_loop(asyncio.new_event_loop())
 
 from pyrogram import Client, filters, types
 from bridge import config, database, media, polling
@@ -18,11 +16,9 @@ from bridge.logger import get_logger
 logger = get_logger("telegram")
 
 # Configuration
-
 settings = config.load_settings()
 telegram_info = settings["telegram"]
 bridges = config.get_bridges(settings)
-
 api_id = telegram_info["api_id"]
 api_hash = telegram_info["api_hash"]
 bot_token = telegram_info.get("bot_token")
@@ -41,7 +37,6 @@ SOURCE_CHATS = [b["telegram_chat_id"] for b in bridges]
 _processed_media_groups: set[str] = set()
 
 # Telegram-specific helpers
-
 def _bridge_name_for_chat(chat_id: int) -> str | None:
     """Return the bridge name that matches *chat_id*, or ``None``."""
     for b in bridges:
@@ -86,7 +81,6 @@ def get_media_info(msg: types.Message) -> tuple[str, str]:
     return "file", ""
 
 # Incoming Telegram messages
-
 @app.on_message(filters.chat(SOURCE_CHATS))
 async def on_telegram_message(client: Client, message: types.Message):
     chname = _bridge_name_for_chat(message.chat.id)
@@ -109,8 +103,8 @@ async def on_telegram_message(client: Client, message: types.Message):
             await asyncio.sleep(0.5)
             file_name, file_type = get_media_info(item)
             file_path = os.path.join(config.TELEGRAM_DIR, f"{file_name}_({i}){file_type}")
-            media.save_attachment_json(config.TELEGRAM_ATTACHMENTS_JSON, file_path, sender, chname)
             await client.download_media(item, file_name=file_path)
+            await database.save_attachment_to_db(config.TELEGRAM_DB, file_path, file_type, sender, chname)
         if message.caption:
             await database.save_text_to_db(config.TELEGRAM_DB, message.caption, sender, chname)
 
@@ -119,7 +113,7 @@ async def on_telegram_message(client: Client, message: types.Message):
         file_name, file_type = get_media_info(message)
         file_path = media.get_unique_filepath(config.TELEGRAM_DIR, file_name, file_type)
         await client.download_media(message, file_path)
-        media.save_attachment_json(config.TELEGRAM_ATTACHMENTS_JSON, file_path, sender, chname)
+        await database.save_attachment_to_db(config.TELEGRAM_DB, file_path, file_type, sender, chname)
         if message.caption:
             await database.save_text_to_db(config.TELEGRAM_DB, message.caption, sender, chname)
 
@@ -137,9 +131,7 @@ async def on_telegram_message(client: Client, message: types.Message):
         )
 
 # Outgoing callbacks (Discord → Telegram)
-
 MESSAGE_CHUNK_LIMIT = 1800
-
 async def _send_text(content, sender, chat, _replied_to_text, _replied_to_sender):
     """Callback for :func:`polling.poll_text_db` — send text to Telegram."""
     chat_id = _telegram_chat_id_for(chat)
@@ -155,7 +147,7 @@ async def _send_text(content, sender, chat, _replied_to_text, _replied_to_sender
 
 
 async def _send_file(file_path, file_extension, sender, chat):
-    """Callback for :func:`polling.poll_new_files` — send a file to Telegram."""
+    """Callback for :func:`polling.poll_attachments_db` — send a file to Telegram."""
     chat_id = _telegram_chat_id_for(chat)
     if chat_id is None:
         logger.warning("No Telegram chat found for bridge '%s'", chat)
@@ -181,7 +173,6 @@ async def _send_file(file_path, file_extension, sender, chat):
         await app.send_document(chat_id, file_path, caption=caption)
 
 # Entry point
-
 async def run() -> None:
     """Start the Telegram client, initialize the DB, and poll for Discord messages."""
     logger.info("Telegram bot starting…")
@@ -190,5 +181,5 @@ async def run() -> None:
         logger.info("Telegram bot is alive")
         await asyncio.gather(
             polling.poll_text_db(config.DISCORD_DB, _send_text),
-            polling.poll_new_files(config.DISCORD_DIR, config.DISCORD_ATTACHMENTS_JSON, _send_file),
+            polling.poll_attachments_db(config.DISCORD_DB, _send_file),
         )

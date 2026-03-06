@@ -3,12 +3,10 @@ Shared polling loops for watching incoming messages from the other platform.
 """
 
 import asyncio
-import json
 import os
 from collections.abc import Awaitable, Callable
 import aiosqlite
 from bridge.logger import get_logger
-from bridge.media import IGNORED_FILES, MEDIA_EXTENSIONS
 
 logger = get_logger("polling")
 
@@ -63,55 +61,56 @@ async def poll_text_db(
         await on_new_message(content, sender, chat, replied_to_text, replied_to_sender)
 
 
-async def poll_new_files(
-    directory: str,
-    attachments_json: str,
+async def poll_attachments_db(
+    db_path: str,
     on_new_file: FileCallback,
 ) -> None:
-    """Poll *directory* for new media files, invoke *on_new_file* for each.
+    """Poll the attachments table in *db_path* for new rows.
 
     Parameters passed to *on_new_file*::
 
         on_new_file(file_path, file_extension, sender, chat)
 
-    The file is deleted after the callback returns (or raises).
+    The attachment row and the file on disk are deleted after the callback
+    returns (or raises).
     """
+    from bridge.database import delete_attachment
+
+    last_id = 0
+
     while True:
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
         try:
-            entries = os.listdir(directory)
-        except FileNotFoundError:
+            async with aiosqlite.connect(db_path) as db:
+                async with db.execute("SELECT MAX(id) FROM attachments") as cur:
+                    row = await cur.fetchone()
+                    max_id = row[0]
+                    if max_id is None or max_id <= last_id:
+                        continue
+                    last_id = max_id
+
+                async with db.execute(
+                    "SELECT id, file_path, file_ext, sender, chat "
+                    "FROM attachments WHERE id = ?",
+                    (last_id,),
+                ) as cur:
+                    row = await cur.fetchone()
+                    if row is None:
+                        continue
+                    att_id, file_path, file_ext, sender, chat = row
+        except Exception:
+            logger.debug("Polling %s attachments — DB not ready or transient error", db_path, exc_info=True)
             continue
 
-        for file in entries:
-            file_extension = os.path.splitext(file)[1].lower()
+        if not file_path or not os.path.isfile(file_path):
+            logger.warning("Attachment file missing: %s", file_path)
+            await delete_attachment(db_path, att_id)
+            continue
 
-            if file_extension == ".temp":
-                continue
-
-            if file_extension not in MEDIA_EXTENSIONS:
-                if file not in IGNORED_FILES:
-                    try:
-                        os.remove(os.path.join(directory, file))
-                    except OSError:
-                        pass
-                continue
-
-            # Read attachment metadata
-            try:
-                with open(attachments_json, "r", encoding="utf-8") as fh:
-                    data = json.load(fh)
-                sender = data["message"]["sender"]
-                chat = data["message"]["chat"]
-            except (KeyError, json.JSONDecodeError, FileNotFoundError):
-                logger.warning("Could not read attachment metadata from %s", attachments_json)
-                continue
-
-            file_path = os.path.join(directory, file)
-            logger.info("New file %s from %s (chat=%s)", file, sender, chat)
-
-            try:
-                await on_new_file(file_path, file_extension, sender, chat)
-            finally:
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
+        logger.info("New attachment %s from %s (chat=%s)", file_path, sender, chat)
+        try:
+            await on_new_file(file_path, file_ext, sender, chat)
+        finally:
+            await delete_attachment(db_path, att_id)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
