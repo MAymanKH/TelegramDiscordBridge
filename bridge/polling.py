@@ -22,11 +22,7 @@ async def poll_text_db(
 
     Parameters passed to *on_new_message*::
 
-        on_new_message(content, sender, chat,
-                       replied_to_text, replied_to_sender)
-
-    ``replied_to_text`` and ``replied_to_sender`` may be ``None`` when the
-    source database does not include those columns.
+        on_new_message(internal_id, source_message_id, replied_to_message_id, content, sender, chat)
     """
     last_id = 0
 
@@ -42,14 +38,14 @@ async def poll_text_db(
                     last_id = max_id
 
                 async with db.execute(
-                    "SELECT content, sender, chat, replied_to_text, replied_to_sender "
+                    "SELECT id, source_message_id, replied_to_message_id, content, sender, chat "
                     "FROM messages WHERE id = ?",
                     (last_id,),
                 ) as cur:
                     row = await cur.fetchone()
                     if row is None:
                         continue
-                    content, sender, chat, replied_to_text, replied_to_sender = row
+                    internal_id, source_message_id, replied_to_message_id, content, sender, chat = row
         except Exception:
             logger.debug("Polling %s — DB not ready or transient error", db_path, exc_info=True)
             continue
@@ -58,7 +54,7 @@ async def poll_text_db(
             continue
 
         logger.info("New text in %s from %s (chat=%s)", db_path, sender, chat)
-        await on_new_message(content, sender, chat, replied_to_text, replied_to_sender)
+        await on_new_message(internal_id, source_message_id, replied_to_message_id, content, sender, chat)
 
 
 async def poll_attachments_db(
@@ -69,7 +65,7 @@ async def poll_attachments_db(
 
     Parameters passed to *on_new_file*::
 
-        on_new_file(file_path, file_extension, sender, chat)
+        on_new_file(source_message_id, replied_to_message_id, file_path, file_ext, sender, chat)
 
     The attachment row and the file on disk are deleted after the callback
     returns (or raises).
@@ -90,14 +86,14 @@ async def poll_attachments_db(
                     last_id = max_id
 
                 async with db.execute(
-                    "SELECT id, file_path, file_ext, sender, chat "
+                    "SELECT id, source_message_id, replied_to_message_id, file_path, file_ext, sender, chat "
                     "FROM attachments WHERE id = ?",
                     (last_id,),
                 ) as cur:
                     row = await cur.fetchone()
                     if row is None:
                         continue
-                    att_id, file_path, file_ext, sender, chat = row
+                    att_id, source_message_id, replied_to_message_id, file_path, file_ext, sender, chat = row
         except Exception:
             logger.debug("Polling %s attachments — DB not ready or transient error", db_path, exc_info=True)
             continue
@@ -109,7 +105,7 @@ async def poll_attachments_db(
 
         logger.info("New attachment %s from %s (chat=%s)", file_path, sender, chat)
         try:
-            await on_new_file(file_path, file_ext, sender, chat)
+            await on_new_file(source_message_id, replied_to_message_id, file_path, file_ext, sender, chat)
         finally:
             await delete_attachment(db_path, att_id)
             if os.path.isfile(file_path):
