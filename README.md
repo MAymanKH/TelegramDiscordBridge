@@ -25,7 +25,8 @@ A lightweight, fully asynchronous Python application that creates two-way bridge
 
 - **Two-way text bridging** — messages sent in Telegram appear in Discord and vice versa
 - **Reply threading** — replies are matched and threaded on the receiving platform
-- **Rich media support** — photos, videos, audio, voice messages, stickers (WebP), PDFs, and generic documents
+- **Reaction synchronization** — support bridging emoji reactions on messages to the other platform
+- **Rich media support** — photos, videos, audio, voice messages, stickers, PDFs, and generic documents
 - **Long message chunking** — messages exceeding 1,800 characters are automatically split
 - **File size guard** — files larger than 8 MB trigger a friendly warning instead of failing silently
 - **Multiple bridges** — configure as many Telegram ↔ Discord pairs as needed in a single `settings.yaml`
