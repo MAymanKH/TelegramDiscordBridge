@@ -112,12 +112,69 @@ async def on_telegram_message(client: Client, message: types.Message):
         if message.caption:
             await database.save_text_to_db(config.TELEGRAM_DB, message.id, message.caption, sender, chname, message.reply_to_message_id)
 
-    # Text message
     else:
         await database.save_text_to_db(
             config.TELEGRAM_DB, message.id, message.text, sender, chname,
             message.reply_to_message_id,
         )
+
+# Reaction Handling
+@app.on_message_reaction_updated(filters.chat(SOURCE_CHATS))
+async def on_telegram_reaction(client: Client, update: types.MessageReactions):
+    chname = _bridge_name_for_chat(update.chat.id)
+    if chname is None:
+        return
+
+    # User who reacted
+    user = getattr(update, "from_user", None)
+    if user and user.is_bot:
+        return
+    
+    sender = f"{user.first_name or ''} {user.last_name or ''}".strip() if user else "Someone"
+    if not sender and user and user.username:
+        sender = user.username
+    elif not sender:
+        sender = "Someone"
+
+    # update.new_reaction gives the new list of reactions. 
+    if not hasattr(update, "new_reaction") or not update.new_reaction:
+        return # Reactions were removed
+    
+    reaction = update.new_reaction[0]
+    emoji = getattr(reaction, "emoji", None)
+    if not emoji:
+        emoji = getattr(reaction, "custom_emoji_id", "a custom emoji")
+
+    # Determine Discord message to reply to
+    telegram_msg_id = getattr(update, "message_id", getattr(update, "id", None))
+    if telegram_msg_id is None:
+        return
+
+    discord_msg_id = None
+
+    # Was this message originally from Telegram?
+    forwarded_id = await database.get_forwarded_id(config.TELEGRAM_DB, telegram_msg_id)
+    if forwarded_id:
+        discord_msg_id = forwarded_id
+    else:
+        # Was this message originally from Discord?
+        source_id = await database.get_source_id(config.DISCORD_DB, telegram_msg_id)
+        if source_id:
+            discord_msg_id = source_id
+
+    if discord_msg_id:
+        # Queue the reaction reply to be sent by Discord bot
+        # We'll save a special text message locally
+        content = f"> {sender} reacted with {emoji}"
+        await database.save_text_to_db(
+            config.TELEGRAM_DB, 
+            telegram_msg_id + hash(f"{sender}{emoji}") % 100000, # Fake ID
+            content, 
+            chname, # Make sender equal to chat name so Discord displays it purely as content without prefix
+            chname,
+            telegram_msg_id # Pass this side's native ID so the other side can translate it normally
+        )
+
 
 # Outgoing callbacks (Discord → Telegram)
 MESSAGE_CHUNK_LIMIT = 1800
@@ -133,14 +190,20 @@ async def _send_text(internal_id, source_message_id, replied_to_message_id, cont
         reply_to = await database.get_source_id(config.TELEGRAM_DB, replied_to_message_id)
         if not reply_to:
             reply_to = await database.get_forwarded_id(config.DISCORD_DB, replied_to_message_id)
+        # Fallback for reactions: the ID passed might already be a native Telegram message ID
+        if not reply_to and str(content).startswith("> "):
+            reply_to = replied_to_message_id
+
+    text = content if sender == chat else f"**{sender}:**\n{content}"
 
     sent_msg = None
     if len(content) > MESSAGE_CHUNK_LIMIT:
         for chunk in (content[i:i + MESSAGE_CHUNK_LIMIT] for i in range(0, len(content), MESSAGE_CHUNK_LIMIT)):
-            sent_msg = await app.send_message(chat_id, f"**{sender}:**\n{chunk}", reply_to_message_id=reply_to)
+            chunk_text = chunk if sender == chat else f"**{sender}:**\n{chunk}"
+            sent_msg = await app.send_message(chat_id, chunk_text, reply_to_message_id=reply_to)
             reply_to = None # Only reply to the first chunk
     else:
-        sent_msg = await app.send_message(chat_id, f"**{sender}:**\n{content}", reply_to_message_id=reply_to)
+        sent_msg = await app.send_message(chat_id, text, reply_to_message_id=reply_to)
 
     if sent_msg:
         await database.update_message_forwarded_id(config.DISCORD_DB, internal_id, sent_msg.id)
@@ -153,10 +216,12 @@ async def _send_file(source_message_id, replied_to_message_id, file_path, file_e
         logger.warning("No Telegram chat found for bridge '%s'", chat)
         return
 
-    caption = f"**{sender}:**"
+    caption = "" if sender == chat else f"**{sender}:**"
 
     if os.path.getsize(file_path) > 8_388_608:
-        await app.send_message(chat_id, f"**{sender}:** File size is over 8MB, can't send it.")
+        msg = "File size is over 8MB, can't send it."
+        text = msg if sender == chat else f"**{sender}:** {msg}"
+        await app.send_message(chat_id, text)
         return
 
     reply_to = None

@@ -71,7 +71,7 @@ async def on_message(message: discord.Message):
     for attachment in message.attachments:
         original_name = attachment.filename
         file_name, file_type = os.path.splitext(original_name)
-        # Issue #8 fix: convert webp to png for better Telegram compatibility
+        # Convert webp to png for better Telegram compatibility
         if file_type.lower() == ".webp":
             file_type = ".png"
         file_path = media.get_unique_filepath(config.DISCORD_DIR, file_name, file_type)
@@ -91,6 +91,58 @@ async def on_message(message: discord.Message):
             replied_to_id,
         )
 
+# Reaction Handling
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    # Ignore bot's own reactions
+    if payload.member and payload.member.bot:
+        return
+    if payload.user_id == bot.user.id:
+        return
+
+    channel = bot.get_channel(payload.channel_id)
+    if channel is None:
+        return
+
+    chname = _bridge_name_for_channel(channel.id)
+    if chname is None:
+        return
+
+    # User who reacted
+    user = bot.get_user(payload.user_id)
+    sender = user.display_name if user else "Someone"
+
+    # Emoji used
+    emoji = payload.emoji.name
+
+    # Determine Telegram message to reply to
+    discord_msg_id = payload.message_id
+    telegram_msg_id = None
+
+    # Was this message originally from Discord?
+    forwarded_id = await database.get_forwarded_id(config.DISCORD_DB, discord_msg_id)
+    if forwarded_id:
+        telegram_msg_id = forwarded_id
+    else:
+        # Was this message originally from Telegram?
+        source_id = await database.get_source_id(config.TELEGRAM_DB, discord_msg_id)
+        if source_id:
+            telegram_msg_id = source_id
+
+    if telegram_msg_id:
+        # Queue the reaction reply to be sent by Telegram bot
+        # We'll save a special text message locally
+        content = f"> {sender} reacted with {emoji}"
+        await database.save_text_to_db(
+            config.DISCORD_DB, 
+            discord_msg_id + hash(f"{sender}{emoji}") % 100000, # Fake ID so it gets picked up by poller
+            content, 
+            chname, # Use chat name as sender so `sender == chat` evaluates True to hide prefix
+            chname,
+            telegram_msg_id # We set replied_to_message_id directly to the other side's source to ensure it replies
+        )
+
+
 # Outgoing callbacks (Telegram → Discord)
 MESSAGE_CHUNK_LIMIT = 1800
 async def _send_text(internal_id, source_message_id, replied_to_message_id, content, sender, chat):
@@ -105,6 +157,9 @@ async def _send_text(internal_id, source_message_id, replied_to_message_id, cont
         reply_to = await database.get_source_id(config.DISCORD_DB, replied_to_message_id)
         if not reply_to:
             reply_to = await database.get_forwarded_id(config.TELEGRAM_DB, replied_to_message_id)
+        # Fallback for reactions: the ID passed might already be a native Discord message ID
+        if not reply_to and str(content).startswith("> "):
+            reply_to = replied_to_message_id
 
     async def _reply_or_send(text: str) -> discord.Message:
         if reply_to:
