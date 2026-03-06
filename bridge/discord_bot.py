@@ -1,29 +1,22 @@
 """
 Discord bot — receives messages from Discord and forwards Telegram→Discord.
-
-Only Discord-specific logic lives here; shared polling, DB, media, and
-config helpers are imported from the ``bridge`` package.
 """
 
 import asyncio
 import os
-
 import discord
 from discord.ext import commands
-
 from bridge import config, database, media, polling
 from bridge.logger import get_logger
 
 logger = get_logger("discord")
 
-# ── Configuration ──────────────────────────────────────────────────────────
+# Configuration
 
 settings = config.load_settings()
 bridges = config.get_bridges(settings)
 
-
-# ── Bot class ──────────────────────────────────────────────────────────────
-
+# Bot class
 
 class BridgeBot(commands.Bot):
     """A ``commands.Bot`` subclass wired into the bridge system."""
@@ -46,12 +39,9 @@ class BridgeBot(commands.Bot):
             polling.poll_new_files(config.TELEGRAM_DIR, config.TELEGRAM_ATTACHMENTS_JSON, _send_file),
         )
 
-
 bot = BridgeBot()
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────
-
+# Helpers
 
 def _discord_channel_for(bridge_name: str) -> discord.TextChannel | None:
     """Return the Discord channel object for a bridge by name, or ``None``."""
@@ -60,7 +50,6 @@ def _discord_channel_for(bridge_name: str) -> discord.TextChannel | None:
             return bot.get_channel(b["discord_chat_id"])
     return None
 
-
 def _bridge_name_for_channel(channel_id: int) -> str | None:
     """Return the bridge name that matches *channel_id*, or ``None``."""
     for b in bridges:
@@ -68,9 +57,7 @@ def _bridge_name_for_channel(channel_id: int) -> str | None:
             return b["name"]
     return None
 
-
-# ── Incoming Discord messages ──────────────────────────────────────────────
-
+# Incoming Discord messages
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -108,11 +95,9 @@ async def on_message(message: discord.Message):
             replied_to_text, replied_to_sender,
         )
 
-
-# ── Outgoing callbacks (Telegram → Discord) ───────────────────────────────
+# Outgoing callbacks (Telegram → Discord)
 
 MESSAGE_CHUNK_LIMIT = 1800
-
 
 async def _send_text(content, sender, chat, replied_to_text, replied_to_sender):
     """Callback for :func:`polling.poll_text_db` — send text to Discord."""
@@ -163,9 +148,7 @@ async def _send_file(file_path, file_extension, sender, chat):
         else:
             await channel.send(file=discord.File(file_path), content=f"*{sender}:* [{file_name}]")
 
-
-# ── Entry point ────────────────────────────────────────────────────────────
-
+# Entry point
 
 async def run() -> None:
     """Start the Discord bot (blocking)."""

@@ -1,28 +1,23 @@
 """
 Telegram bot — receives messages from Telegram and forwards Discord→Telegram.
-
-Only Telegram-specific logic lives here; shared polling, DB, media, and
-config helpers are imported from the ``bridge`` package.
 """
 
 import asyncio
 import os
 
-# Pyrogram calls asyncio.get_event_loop() at import time.  Python 3.14
-# removed the implicit loop creation, so we must ensure one exists first.
+# Pyrogram calls asyncio.get_event_loop() at import time. Python 3.14
 try:
     asyncio.get_event_loop()
 except RuntimeError:
     asyncio.set_event_loop(asyncio.new_event_loop())
 
 from pyrogram import Client, filters, types
-
 from bridge import config, database, media, polling
 from bridge.logger import get_logger
 
 logger = get_logger("telegram")
 
-# ── Configuration ──────────────────────────────────────────────────────────
+# Configuration
 
 settings = config.load_settings()
 telegram_info = settings["telegram"]
@@ -45,9 +40,7 @@ SOURCE_CHATS = [b["telegram_chat_id"] for b in bridges]
 # Track processed media groups to avoid duplicate downloads (Issue #4 fix)
 _processed_media_groups: set[str] = set()
 
-
-# ── Telegram-specific helpers ──────────────────────────────────────────────
-
+# Telegram-specific helpers
 
 def _bridge_name_for_chat(chat_id: int) -> str | None:
     """Return the bridge name that matches *chat_id*, or ``None``."""
@@ -56,14 +49,12 @@ def _bridge_name_for_chat(chat_id: int) -> str | None:
             return b["name"]
     return None
 
-
 def _telegram_chat_id_for(bridge_name: str) -> int | None:
     """Return the Telegram chat ID for a bridge by name, or ``None``."""
     for b in bridges:
         if bridge_name == b["name"]:
             return b["telegram_chat_id"]
     return None
-
 
 def get_sender_name(message: types.Message, fallback: str = "Unknown") -> str:
     """Extract a display name from a Pyrogram message."""
@@ -74,7 +65,6 @@ def get_sender_name(message: types.Message, fallback: str = "Unknown") -> str:
         return name if name else (message.from_user.username or fallback)
     except AttributeError:
         return fallback
-
 
 def get_media_info(msg: types.Message) -> tuple[str, str]:
     """Return ``(file_name, file_extension)`` from a Pyrogram message.
@@ -95,9 +85,7 @@ def get_media_info(msg: types.Message) -> tuple[str, str]:
         return "sticker", ".webp"
     return "file", ""
 
-
-# ── Incoming Telegram messages ─────────────────────────────────────────────
-
+# Incoming Telegram messages
 
 @app.on_message(filters.chat(SOURCE_CHATS))
 async def on_telegram_message(client: Client, message: types.Message):
@@ -108,7 +96,7 @@ async def on_telegram_message(client: Client, message: types.Message):
     sender = get_sender_name(message, fallback=chname)
     logger.info("Message from %s in %s", sender, chname)
 
-    # ── Media group (Issue #4 fix: deduplicate) ──
+    # Media group (Issue #4 fix: deduplicate)
     if message.media_group_id:
         if message.media_group_id in _processed_media_groups:
             return
@@ -126,7 +114,7 @@ async def on_telegram_message(client: Client, message: types.Message):
         if message.caption:
             await database.save_text_to_db(config.TELEGRAM_DB, message.caption, sender, chname)
 
-    # ── Single attachment ──
+    # Single attachment
     elif message.media:
         file_name, file_type = get_media_info(message)
         file_path = media.get_unique_filepath(config.TELEGRAM_DIR, file_name, file_type)
@@ -135,7 +123,7 @@ async def on_telegram_message(client: Client, message: types.Message):
         if message.caption:
             await database.save_text_to_db(config.TELEGRAM_DB, message.caption, sender, chname)
 
-    # ── Text message ──
+    # Text message
     else:
         replied_to = message.reply_to_message
         replied_to_text = None
@@ -148,11 +136,9 @@ async def on_telegram_message(client: Client, message: types.Message):
             replied_to_text, replied_to_sender,
         )
 
-
-# ── Outgoing callbacks (Discord → Telegram) ───────────────────────────────
+# Outgoing callbacks (Discord → Telegram)
 
 MESSAGE_CHUNK_LIMIT = 1800
-
 
 async def _send_text(content, sender, chat, _replied_to_text, _replied_to_sender):
     """Callback for :func:`polling.poll_text_db` — send text to Telegram."""
@@ -190,14 +176,11 @@ async def _send_file(file_path, file_extension, sender, chat):
     elif file_extension == ".ogg":
         await app.send_voice(chat_id, file_path, caption=caption)
     elif file_extension == ".webp":
-        # Issue #8 fix: send webp as document instead of silently dropping
         await app.send_document(chat_id, file_path, caption=caption)
     elif file_extension in (".pdf", ".apk"):
         await app.send_document(chat_id, file_path, caption=caption)
 
-
-# ── Entry point ────────────────────────────────────────────────────────────
-
+# Entry point
 
 async def run() -> None:
     """Start the Telegram client, initialize the DB, and poll for Discord messages."""

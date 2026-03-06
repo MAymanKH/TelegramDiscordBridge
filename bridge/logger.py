@@ -12,9 +12,7 @@ from logging.handlers import RotatingFileHandler
 
 _LOG_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-
 _configured = False
-
 
 def setup_logging(*, level: int = logging.INFO, log_dir: str = "logs") -> None:
     """Configure the root ``bridge`` logger.
@@ -48,7 +46,6 @@ def setup_logging(*, level: int = logging.INFO, log_dir: str = "logs") -> None:
     )
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
-
 
 def get_logger(name: str) -> logging.Logger:
     """Return a child logger under the ``bridge`` namespace.

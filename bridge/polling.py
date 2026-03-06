@@ -1,18 +1,12 @@
 """
-Shared polling loops for watching incoming messages from the *other* platform.
-
-Both bots previously contained near-identical ``detect_text_change`` and
-``detect_new_files`` routines.  This module provides generic implementations
-that accept platform-specific callbacks.
+Shared polling loops for watching incoming messages from the other platform.
 """
 
 import asyncio
 import json
 import os
 from collections.abc import Awaitable, Callable
-
 import aiosqlite
-
 from bridge.logger import get_logger
 from bridge.media import IGNORED_FILES, MEDIA_EXTENSIONS
 
@@ -21,7 +15,6 @@ logger = get_logger("polling")
 # Type aliases for the callbacks each bot must supply.
 TextCallback = Callable[..., Awaitable[None]]
 FileCallback = Callable[..., Awaitable[None]]
-
 
 async def poll_text_db(
     db_path: str,
@@ -35,9 +28,7 @@ async def poll_text_db(
                        replied_to_text, replied_to_sender)
 
     ``replied_to_text`` and ``replied_to_sender`` may be ``None`` when the
-    source database does not include those columns (e.g. the Telegram-side
-    DB stores them, but the Discord-side DB does too now with the unified
-    schema).
+    source database does not include those columns.
     """
     last_id = 0
 
@@ -83,7 +74,7 @@ async def poll_new_files(
 
         on_new_file(file_path, file_extension, sender, chat)
 
-    The file is **deleted** after the callback returns (or raises).
+    The file is deleted after the callback returns (or raises).
     """
     while True:
         await asyncio.sleep(1)

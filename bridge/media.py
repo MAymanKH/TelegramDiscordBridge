@@ -1,24 +1,20 @@
 """
 Media / attachment helpers and file-type constants.
-
-Extracted from the old ``utils.py``.
 """
 
 import json
 import os
-
 from bridge.logger import get_logger
 
 logger = get_logger("media")
 
-# ── File-type sets ─────────────────────────────────────────────────────────
+# File-type sets
 
 PHOTO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif"}
 MEDIA_EXTENSIONS = PHOTO_EXTENSIONS | {".webp", ".mp4", ".mp3", ".ogg", ".pdf", ".apk"}
 IGNORED_FILES = {"attachments.json", "text.json", "text.db"}
 
-# ── Helpers ────────────────────────────────────────────────────────────────
-
+# Helpers
 
 def get_unique_filepath(directory: str, file_name: str, file_type: str) -> str:
     """Generate a unique file path, appending a counter if the file already exists.
@@ -34,7 +30,6 @@ def get_unique_filepath(directory: str, file_name: str, file_type: str) -> str:
         if not os.path.isfile(candidate):
             return candidate
         counter += 1
-
 
 def save_attachment_json(
     json_file_path: str,

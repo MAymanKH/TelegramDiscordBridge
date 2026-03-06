@@ -1,14 +1,9 @@
 """
 SQLite database helpers for text-message persistence.
-
-Extracted from the old ``utils.py`` — provides ``init_db`` and
-``save_text_to_db`` with proper logging.
 """
 
 import time
-
 import aiosqlite
-
 from bridge.logger import get_logger
 
 logger = get_logger("database")
@@ -25,14 +20,12 @@ CREATE TABLE IF NOT EXISTS messages (
 )
 """
 
-
 async def init_db(db_path: str) -> None:
     """Create the ``messages`` table if it does not exist."""
     async with aiosqlite.connect(db_path) as db:
         await db.execute(_CREATE_TABLE_SQL)
         await db.commit()
     logger.info("Database initialized: %s", db_path)
-
 
 async def save_text_to_db(
     db_path: str,
