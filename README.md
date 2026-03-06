@@ -1,6 +1,6 @@
 <div align='center'>
 <h1>Telegram Discord Bridge</h1>
-<h3>Simple two-way bridge between Telegram and Discord in Python</h3>
+<h3>Simple two-way bridge between Telegram and Discord written in Python</h3>
 <br>
 <a href="https://github.com/Rapptz/discord.py">
    <img src="https://img.shields.io/badge/discord.py-2.4.0+-blue?" alt="discord.py"/>
@@ -19,7 +19,7 @@
 
 ## Overview
 
-A lightweight, fully asynchronous Python application that creates two-way bridges between Telegram chats and Discord channels. Messages, media, and replies flow in both directions across any number of configured channel pairs.
+A lightweight, fully asynchronous Python application that creates two-way bridges between Telegram chats and Discord channels. Messages, media, reactions, and reply threads flow in both directions across any number of configured channel pairs.
 
 ## Features
 
@@ -30,10 +30,18 @@ A lightweight, fully asynchronous Python application that creates two-way bridge
 - **Long message chunking** — messages exceeding 1,800 characters are automatically split
 - **File size guard** — files larger than 8 MB trigger a friendly warning instead of failing silently
 - **Multiple bridges** — configure as many Telegram ↔ Discord pairs as needed in a single `settings.yaml`
-- **Flexible Telegram auth** — works as a bot (bot token), a user account (phone number)
+- **Flexible Telegram auth** — works as a bot (bot token) or a user account (phone number)
+- **Simple to setup** — Just a few minutes to fully setup, configure, and run
 - **Docker support** — includes a production-ready `Dockerfile` and `docker-compose.yml`
 
 ## Setup
+
+### 0. Prerequisites
+
+- [Python](https://www.python.org/downloads/) 3.11 or higher
+- [Git](https://git-scm.com/install/)
+- [Docker](https://www.docker.com/get-started/) and Docker Compose (optional)
+- Make sure they are added to the PATH environment
 
 ### 1. Credentials
 
@@ -86,11 +94,14 @@ bridges:
 ### 4a. Run directly with Python
 
 ```bash
+python -m venv venv
+
+source venv/bin/activate # (On Windows: .\venv\Scripts\activate)
+
 pip install -r requirements.txt
+
 python main.py
 ```
-
-On the **first run**, if you configured a phone number (user account mode), Pyrogram will prompt for a verification code in the terminal. After successful login the session is saved to `my_bot.session` and subsequent starts require no interaction.
 
 ### 4b. Run with Docker Compose (recommended for servers)
 
@@ -100,16 +111,10 @@ docker-compose up -d
 
 `settings.yaml` is mounted read-only into the container. Telegram session data and message queues are stored in named Docker volumes (`telegram-sessions`, `message-data`) so they persist across container restarts.
 
-To view logs:
-
-```bash
-docker-compose logs -f
-```
+> On the first run, if you configured a phone number (user account mode), Pyrogram will prompt for a verification code in the terminal. After a successful login the session is saved to `my_bot.session` and subsequent starts require no interaction.
 
 ## Notes
 
-- The Discord bot requires the **Message Content** privileged intent to read message text.
-- Make sure the Telegram bot/account has **read access** to the source chats (add it as a member/admin).
-- Files larger than **8 MB** cannot be forwarded via the Discord API; the bridge will send a notification message instead.
-- `.webp` files sent from Discord are re-labeled as `.png` for better Telegram compatibility.
-- This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](https://github.com/MAymanKH/TelegramDiscordBridge/blob/master/LICENSE) file for details.
+- The Discord bot requires the `Message Content` privileged intent to read message text.
+- Make sure the Telegram bot has read access to the source chats (add it as an admin).
+- This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](https://github.com/MAymanKH/TelegramDiscordBridge/blob/main/LICENSE) file for details.
