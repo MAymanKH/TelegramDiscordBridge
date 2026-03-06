@@ -76,52 +76,61 @@ async def on_message(message: discord.Message):
             file_type = ".png"
         file_path = media.get_unique_filepath(config.DISCORD_DIR, file_name, file_type)
         await attachment.save(fp=file_path)
-        await database.save_attachment_to_db(config.DISCORD_DB, file_path, file_type, sender, chname)
+        replied_to_id = None
+        if message.reference and isinstance(message.reference.message_id, int):
+            replied_to_id = message.reference.message_id
+        await database.save_attachment_to_db(config.DISCORD_DB, message.id, file_path, file_type, sender, chname, replied_to_id)
 
     # Save text messages to DB
     if message.content:
-        replied_to_text = None
-        replied_to_sender = None
-        ref = message.reference
-        if ref and getattr(ref, "resolved", None) and isinstance(ref.resolved, discord.Message):
-            replied_to_text = ref.resolved.content
-            replied_to_sender = ref.resolved.author.display_name
+        replied_to_id = None
+        if message.reference and isinstance(message.reference.message_id, int):
+            replied_to_id = message.reference.message_id
         await database.save_text_to_db(
-            config.DISCORD_DB, message.content, sender, chname,
-            replied_to_text, replied_to_sender,
+            config.DISCORD_DB, message.id, message.content, sender, chname,
+            replied_to_id,
         )
 
 # Outgoing callbacks (Telegram → Discord)
 MESSAGE_CHUNK_LIMIT = 1800
-async def _send_text(content, sender, chat, replied_to_text, replied_to_sender):
+async def _send_text(internal_id, source_message_id, replied_to_message_id, content, sender, chat):
     """Callback for :func:`polling.poll_text_db` — send text to Discord."""
     channel = _discord_channel_for(chat)
     if channel is None:
         logger.warning("No Discord channel found for bridge '%s'", chat)
         return
 
-    async def _reply_or_send(text: str) -> None:
-        if replied_to_text is None:
-            await channel.send(text)
-        else:
-            async for msg in channel.history(limit=100):
-                if msg.content == replied_to_text or msg.content == f"*{replied_to_sender}:*\n{replied_to_text}":
-                    await msg.reply(text)
-                    break
-            else:
-                await channel.send(text)
+    reply_to = None
+    if replied_to_message_id:
+        reply_to = await database.get_source_id(config.DISCORD_DB, replied_to_message_id)
+        if not reply_to:
+            reply_to = await database.get_forwarded_id(config.TELEGRAM_DB, replied_to_message_id)
+
+    async def _reply_or_send(text: str) -> discord.Message:
+        if reply_to:
+            try:
+                target_msg = channel.get_partial_message(reply_to)
+                return await target_msg.reply(text)
+            except discord.HTTPException:
+                pass
+        return await channel.send(text)
 
     formatted = content if sender == chat else f"*{sender}:*\n{content}"
 
+    sent_msg = None
     if len(content) > MESSAGE_CHUNK_LIMIT:
         for chunk in (content[i:i + MESSAGE_CHUNK_LIMIT] for i in range(0, len(content), MESSAGE_CHUNK_LIMIT)):
             text = chunk if sender == chat else f"*{sender}:*\n{chunk}"
-            await _reply_or_send(text)
+            sent_msg = await _reply_or_send(text)
+            reply_to = None # Only reply on the first chunk
     else:
-        await _reply_or_send(formatted)
+        sent_msg = await _reply_or_send(formatted)
+
+    if sent_msg:
+        await database.update_message_forwarded_id(config.TELEGRAM_DB, internal_id, sent_msg.id)
 
 
-async def _send_file(file_path, file_extension, sender, chat):
+async def _send_file(source_message_id, replied_to_message_id, file_path, file_extension, sender, chat):
     """Callback for :func:`polling.poll_attachments_db` — send a file to Discord."""
     channel = _discord_channel_for(chat)
     if channel is None:
@@ -130,17 +139,38 @@ async def _send_file(file_path, file_extension, sender, chat):
 
     file_name = os.path.basename(file_path)
 
+    reply_to = None
+    if replied_to_message_id:
+        reply_to = await database.get_source_id(config.DISCORD_DB, replied_to_message_id)
+        if not reply_to:
+            reply_to = await database.get_forwarded_id(config.TELEGRAM_DB, replied_to_message_id)
+
+    async def _send_with_reply(content=None, file=None):
+        if reply_to:
+            try:
+                target_msg = channel.get_partial_message(reply_to)
+                return await target_msg.reply(content=content, file=file)
+            except discord.HTTPException:
+                pass
+        if content and file:
+            return await channel.send(content=content, file=file)
+        elif content:
+            return await channel.send(content=content)
+        elif file:
+            return await channel.send(file=file)
+        return None
+
     if os.path.getsize(file_path) > 8_388_608:
         msg = "File size is over 8MB, so I can't send it. Sorry :("
         if sender == chat:
-            await channel.send(msg)
+            await _send_with_reply(content=msg)
         else:
-            await channel.send(f"*{sender}:* {msg}")
+            await _send_with_reply(content=f"*{sender}:* {msg}")
     else:
         if sender == chat:
-            await channel.send(file=discord.File(file_path))
+            await _send_with_reply(file=discord.File(file_path))
         else:
-            await channel.send(file=discord.File(file_path), content=f"*{sender}:* [{file_name}]")
+            await _send_with_reply(file=discord.File(file_path), content=f"*{sender}:* [{file_name}]")
 
 # Entry point
 async def run() -> None:

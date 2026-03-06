@@ -99,49 +99,54 @@ async def on_telegram_message(client: Client, message: types.Message):
             file_name, file_type = get_media_info(item)
             file_path = os.path.join(config.TELEGRAM_DIR, f"{file_name}_({i}){file_type}")
             await client.download_media(item, file_name=file_path)
-            await database.save_attachment_to_db(config.TELEGRAM_DB, file_path, file_type, sender, chname)
+            await database.save_attachment_to_db(config.TELEGRAM_DB, message.id, file_path, file_type, sender, chname, message.reply_to_message_id)
         if message.caption:
-            await database.save_text_to_db(config.TELEGRAM_DB, message.caption, sender, chname)
+            await database.save_text_to_db(config.TELEGRAM_DB, message.id, message.caption, sender, chname, message.reply_to_message_id)
 
     # Single attachment
     elif message.media:
         file_name, file_type = get_media_info(message)
         file_path = media.get_unique_filepath(config.TELEGRAM_DIR, file_name, file_type)
         await client.download_media(message, file_path)
-        await database.save_attachment_to_db(config.TELEGRAM_DB, file_path, file_type, sender, chname)
+        await database.save_attachment_to_db(config.TELEGRAM_DB, message.id, file_path, file_type, sender, chname, message.reply_to_message_id)
         if message.caption:
-            await database.save_text_to_db(config.TELEGRAM_DB, message.caption, sender, chname)
+            await database.save_text_to_db(config.TELEGRAM_DB, message.id, message.caption, sender, chname, message.reply_to_message_id)
 
     # Text message
     else:
-        replied_to = message.reply_to_message
-        replied_to_text = None
-        replied_to_sender = None
-        if replied_to is not None:
-            replied_to_text = replied_to.text
-            replied_to_sender = get_sender_name(replied_to, fallback=chname)
         await database.save_text_to_db(
-            config.TELEGRAM_DB, message.text, sender, chname,
-            replied_to_text, replied_to_sender,
+            config.TELEGRAM_DB, message.id, message.text, sender, chname,
+            message.reply_to_message_id,
         )
 
 # Outgoing callbacks (Discord → Telegram)
 MESSAGE_CHUNK_LIMIT = 1800
-async def _send_text(content, sender, chat, _replied_to_text, _replied_to_sender):
+async def _send_text(internal_id, source_message_id, replied_to_message_id, content, sender, chat):
     """Callback for :func:`polling.poll_text_db` — send text to Telegram."""
     chat_id = _telegram_chat_id_for(chat)
     if chat_id is None:
         logger.warning("No Telegram chat found for bridge '%s'", chat)
         return
 
+    reply_to = None
+    if replied_to_message_id:
+        reply_to = await database.get_source_id(config.TELEGRAM_DB, replied_to_message_id)
+        if not reply_to:
+            reply_to = await database.get_forwarded_id(config.DISCORD_DB, replied_to_message_id)
+
+    sent_msg = None
     if len(content) > MESSAGE_CHUNK_LIMIT:
         for chunk in (content[i:i + MESSAGE_CHUNK_LIMIT] for i in range(0, len(content), MESSAGE_CHUNK_LIMIT)):
-            await app.send_message(chat_id, f"**{sender}:**\n{chunk}")
+            sent_msg = await app.send_message(chat_id, f"**{sender}:**\n{chunk}", reply_to_message_id=reply_to)
+            reply_to = None # Only reply to the first chunk
     else:
-        await app.send_message(chat_id, f"**{sender}:**\n{content}")
+        sent_msg = await app.send_message(chat_id, f"**{sender}:**\n{content}", reply_to_message_id=reply_to)
+
+    if sent_msg:
+        await database.update_message_forwarded_id(config.DISCORD_DB, internal_id, sent_msg.id)
 
 
-async def _send_file(file_path, file_extension, sender, chat):
+async def _send_file(source_message_id, replied_to_message_id, file_path, file_extension, sender, chat):
     """Callback for :func:`polling.poll_attachments_db` — send a file to Telegram."""
     chat_id = _telegram_chat_id_for(chat)
     if chat_id is None:
@@ -154,18 +159,25 @@ async def _send_file(file_path, file_extension, sender, chat):
         await app.send_message(chat_id, f"**{sender}:** File size is over 8MB, can't send it.")
         return
 
+    reply_to = None
+    if replied_to_message_id:
+        reply_to = await database.get_source_id(config.TELEGRAM_DB, replied_to_message_id)
+        if not reply_to:
+            reply_to = await database.get_forwarded_id(config.DISCORD_DB, replied_to_message_id)
+
+    sent_msg = None
     if file_extension in media.PHOTO_EXTENSIONS:
-        await app.send_photo(chat_id, file_path, caption=caption)
+        sent_msg = await app.send_photo(chat_id, file_path, caption=caption, reply_to_message_id=reply_to)
     elif file_extension == ".mp4":
-        await app.send_video(chat_id, file_path, caption=caption)
+        sent_msg = await app.send_video(chat_id, file_path, caption=caption, reply_to_message_id=reply_to)
     elif file_extension == ".mp3":
-        await app.send_audio(chat_id, file_path, caption=caption)
+        sent_msg = await app.send_audio(chat_id, file_path, caption=caption, reply_to_message_id=reply_to)
     elif file_extension == ".ogg":
-        await app.send_voice(chat_id, file_path, caption=caption)
+        sent_msg = await app.send_voice(chat_id, file_path, caption=caption, reply_to_message_id=reply_to)
     elif file_extension == ".webp":
-        await app.send_document(chat_id, file_path, caption=caption)
+        sent_msg = await app.send_document(chat_id, file_path, caption=caption, reply_to_message_id=reply_to)
     elif file_extension in (".pdf", ".apk"):
-        await app.send_document(chat_id, file_path, caption=caption)
+        sent_msg = await app.send_document(chat_id, file_path, caption=caption, reply_to_message_id=reply_to)
 
 # Entry point
 async def run() -> None:
