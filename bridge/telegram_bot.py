@@ -4,11 +4,6 @@ Telegram bot — receives messages from Telegram and forwards Discord→Telegram
 
 import asyncio
 import os
-
-# Pyrogram calls asyncio.get_event_loop() at import time. Python 3.14
-try: asyncio.get_event_loop()
-except RuntimeError: asyncio.set_event_loop(asyncio.new_event_loop())
-
 from pyrogram import Client, filters, types
 from bridge import config, database, media, polling
 from bridge.logger import get_logger
