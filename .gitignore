@@ -15,6 +15,9 @@ env/
 # Message storage (runtime data)
 messages/
 
+# Logs
+logs/
+
 # IDE
 .vscode/
 .idea/
