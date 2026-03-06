@@ -1,31 +1,29 @@
+"""
+TelegramDiscordBridge — entry point.
+
+Sets up logging, ensures required directories exist, and starts both the
+Telegram and Discord bots **in-process** (no subprocess spawning).
+"""
+
 import asyncio
-import json
-import os
+
+from bridge.config import ensure_directories
+from bridge.logger import setup_logging, get_logger
+
+logger = get_logger("main")
 
 
-def ensure_directories():
-    """Create required message directories and seed files if they don't exist."""
-    for folder in ("messages/telegram", "messages/discord"):
-        os.makedirs(folder, exist_ok=True)
-    for json_path in ("messages/telegram/attachments.json", "messages/discord/attachments.json"):
-        if not os.path.isfile(json_path):
-            with open(json_path, "w", encoding="utf8") as f:
-                json.dump({}, f)
+async def main() -> None:
+    from bridge import telegram_bot, discord_bot
 
-
-async def run_file(file_name):
-    print(f"Starting {file_name}...")
-    process = await asyncio.create_subprocess_shell(f"python {file_name}", cwd=".")
-    await process.wait()
-
-
-async def main():
+    logger.info("Starting Telegram and Discord bots…")
     await asyncio.gather(
-        run_file("telegram_bot.py"),
-        run_file("discord_bot.py"),
+        telegram_bot.run(),
+        discord_bot.run(),
     )
 
 
 if __name__ == "__main__":
+    setup_logging()
     ensure_directories()
     asyncio.run(main())
