@@ -15,4 +15,4 @@ async def main() -> None:
 if __name__ == "__main__":
     setup_logging()
     ensure_directories()
-    asyncio.run(main())
+    asyncio.get_event_loop().run_until_complete(main())
