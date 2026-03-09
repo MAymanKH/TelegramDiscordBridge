@@ -1,9 +1,5 @@
 """
 Centralized logging configuration for the bridge application.
-
-Provides a ``get_logger`` helper so every module can obtain a named logger
-with a consistent format.  The root ``bridge`` logger is configured once
-via ``setup_logging``.
 """
 
 import logging
@@ -19,11 +15,10 @@ def setup_logging(*, level: int = logging.INFO, log_dir: str = "logs") -> None:
 
     * Console handler — always added.
     * Rotating file handler — writes to ``<log_dir>/bridge.log``
-      (5 MB per file, 3 backups).
+        (5 MB per file, 3 backups).
     """
     global _configured
-    if _configured:
-        return
+    if _configured: return
     _configured = True
 
     root = logging.getLogger("bridge")
@@ -49,9 +44,7 @@ def setup_logging(*, level: int = logging.INFO, log_dir: str = "logs") -> None:
 
 def get_logger(name: str) -> logging.Logger:
     """Return a child logger under the ``bridge`` namespace.
-
     Example::
-
         logger = get_logger("telegram")  # → logger named "bridge.telegram"
     """
     return logging.getLogger(f"bridge.{name}")

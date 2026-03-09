@@ -1,130 +1,131 @@
 """
-SQLite database helpers for text-message persistence.
+SQLite database helpers for the unified message-mapping store.
 """
 
 import time
 import aiosqlite
-from bridge.logger import get_logger
+from bridge.utils.logger import get_logger
 
 logger = get_logger("database")
 
-_CREATE_MESSAGES_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS messages (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_message_id     INT,
-    replied_to_message_id INT,
-    forwarded_message_id  INT,
-    content               TEXT,
-    sender                TEXT,
-    chat                  TEXT,
-    sent_at               INT
+_CREATE_MESSAGE_MAP_SQL = """
+CREATE TABLE IF NOT EXISTS message_map (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    bridge_name         TEXT    NOT NULL,
+    source_platform     TEXT    NOT NULL,
+    source_msg_id       INT     NOT NULL,
+    target_platform     TEXT    NOT NULL,
+    target_msg_id       INT,
+    sender              TEXT,
+    created_at          INT     NOT NULL
 )
 """
 
-_CREATE_ATTACHMENTS_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS attachments (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_message_id     INT,
-    replied_to_message_id INT,
-    forwarded_message_id  INT,
-    file_path             TEXT,
-    file_ext              TEXT,
-    sender                TEXT,
-    chat                  TEXT,
-    sent_at               INT
-)
+_CREATE_INDEX_SOURCE_SQL = """
+CREATE INDEX IF NOT EXISTS idx_source
+    ON message_map (bridge_name, source_platform, source_msg_id)
+"""
+
+_CREATE_INDEX_TARGET_SQL = """
+CREATE INDEX IF NOT EXISTS idx_target
+    ON message_map (bridge_name, target_platform, target_msg_id)
 """
 
 async def init_db(db_path: str) -> None:
-    """Create the messages and attachments tables if they do not exist."""
+    """Create the message_map table and indexes if they do not exist."""
     async with aiosqlite.connect(db_path) as db:
-        await db.execute(_CREATE_MESSAGES_TABLE_SQL)
-        await db.execute(_CREATE_ATTACHMENTS_TABLE_SQL)
+        await db.execute(_CREATE_MESSAGE_MAP_SQL)
+        await db.execute(_CREATE_INDEX_SOURCE_SQL)
+        await db.execute(_CREATE_INDEX_TARGET_SQL)
         await db.commit()
     logger.info("Database initialized: %s", db_path)
 
-async def save_text_to_db(
+async def save_message_mapping(
     db_path: str,
-    source_message_id: int,
-    content: str,
-    sender: str,
-    chat: str,
-    replied_to_message_id: int | None = None,
+    bridge_name: str,
+    source_platform: str,
+    source_msg_id: int,
+    target_platform: str,
+    target_msg_id: int | None,
+    sender: str | None = None,
 ) -> None:
-    """Insert a single text message into the SQLite database."""
+    """Record that *source_msg_id* on *source_platform* was forwarded to
+    *target_msg_id* on *target_platform*."""
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO messages "
-            "(source_message_id, replied_to_message_id, content, sender, chat, sent_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (source_message_id, replied_to_message_id, content, sender, chat, int(time.time() * 1000)),
-        )
-        await db.commit()
-    logger.debug("Saved text from %s in chat %s", sender, chat)
-
-async def save_attachment_to_db(
-    db_path: str,
-    source_message_id: int,
-    file_path: str,
-    file_ext: str,
-    sender: str,
-    chat: str,
-    replied_to_message_id: int | None = None,
-) -> None:
-    """Insert attachment metadata into the SQLite database."""
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute(
-            "INSERT INTO attachments (source_message_id, replied_to_message_id, file_path, file_ext, sender, chat, sent_at) "
+            "INSERT INTO message_map "
+            "(bridge_name, source_platform, source_msg_id, target_platform, target_msg_id, sender, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (source_message_id, replied_to_message_id, file_path, file_ext, sender, chat, int(time.time() * 1000)),
+            (bridge_name, source_platform, source_msg_id, target_platform, target_msg_id, sender, int(time.time() * 1000)),
         )
         await db.commit()
-    logger.debug("Saved attachment %s from %s in chat %s", file_path, sender, chat)
+    logger.debug(
+        "Mapped %s:%s → %s:%s (bridge=%s)",
+        source_platform, source_msg_id, target_platform, target_msg_id, bridge_name,
+    )
 
-async def delete_attachment(db_path: str, attachment_id: int) -> None:
-    """Delete an attachment row by ID after it has been forwarded."""
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute("DELETE FROM attachments WHERE id = ?", (attachment_id,))
-        await db.commit()
-
-async def get_forwarded_id(db_path: str, source_id: int) -> int | None:
-    """Get the forwarded_message_id mapped to the given source_message_id."""
+async def get_target_msg_id(
+    db_path: str,
+    bridge_name: str,
+    source_platform: str,
+    source_msg_id: int,
+    target_platform: str,
+) -> int | None:
+    """Look up the target-side message ID for a source message."""
     try:
         async with aiosqlite.connect(db_path) as db:
-            # Check messages table
-            async with db.execute("SELECT forwarded_message_id FROM messages WHERE source_message_id = ? AND forwarded_message_id IS NOT NULL", (source_id,)) as cur:
+            async with db.execute(
+                "SELECT target_msg_id FROM message_map "
+                "WHERE bridge_name = ? AND source_platform = ? AND source_msg_id = ? AND target_platform = ? "
+                "AND target_msg_id IS NOT NULL "
+                "ORDER BY id DESC LIMIT 1",
+                (bridge_name, source_platform, source_msg_id, target_platform),
+            ) as cur:
                 row = await cur.fetchone()
-                if row:
-                    return row[0]
-            # Check attachments table
-            async with db.execute("SELECT forwarded_message_id FROM attachments WHERE source_message_id = ? AND forwarded_message_id IS NOT NULL", (source_id,)) as cur:
-                row = await cur.fetchone()
-                if row:
-                    return row[0]
+                return row[0] if row else None
     except Exception:
-        pass
-    return None
+        logger.debug("get_target_msg_id failed", exc_info=True)
+        return None
 
-async def get_source_id(db_path: str, forwarded_id: int) -> int | None:
-    """Get the original source_message_id mapped to the given forwarded_message_id."""
+async def get_source_msg_id(
+    db_path: str,
+    bridge_name: str,
+    target_platform: str,
+    target_msg_id: int,
+    source_platform: str,
+) -> int | None:
+    """Reverse lookup: given a target message ID, find the original source ID."""
     try:
         async with aiosqlite.connect(db_path) as db:
-            # Check messages table
-            async with db.execute("SELECT source_message_id FROM messages WHERE forwarded_message_id = ?", (forwarded_id,)) as cur:
+            async with db.execute(
+                "SELECT source_msg_id FROM message_map "
+                "WHERE bridge_name = ? AND target_platform = ? AND target_msg_id = ? AND source_platform = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (bridge_name, target_platform, target_msg_id, source_platform),
+            ) as cur:
                 row = await cur.fetchone()
-                if row:
-                    return row[0]
-            # Check attachments table
-            async with db.execute("SELECT source_message_id FROM attachments WHERE forwarded_message_id = ?", (forwarded_id,)) as cur:
-                row = await cur.fetchone()
-                if row:
-                    return row[0]
+                return row[0] if row else None
     except Exception:
-        pass
-    return None
+        logger.debug("get_source_msg_id failed", exc_info=True)
+        return None
 
-async def update_message_forwarded_id(db_path: str, internal_id: int, forwarded_id: int) -> None:
-    """Update the forwarded_message_id for a message in the database."""
-    async with aiosqlite.connect(db_path) as db:
-        await db.execute("UPDATE messages SET forwarded_message_id = ? WHERE id = ?", (forwarded_id, internal_id))
-        await db.commit()
+async def resolve_native_id(
+    db_path: str,
+    bridge_name: str,
+    origin_platform: str,
+    origin_msg_id: int,
+    target_platform: str,
+) -> int | None:
+    """Find the native message ID on *target_platform* for a message that
+    originated on *origin_platform*.
+
+    Checks both directions (source→target and target→source) so it works
+    regardless of which side originally sent the message.
+    """
+    result = await get_target_msg_id(db_path, bridge_name, origin_platform, origin_msg_id, target_platform)
+    if result: return result
+
+    result = await get_source_msg_id(db_path, bridge_name, origin_platform, origin_msg_id, target_platform)
+    if result: return result
+
+    return None
