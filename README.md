@@ -31,9 +31,9 @@ A lightweight, fully asynchronous Python application that creates multi-way brid
 - **Reply threading** — replies are matched and natively threaded on the receiving platforms.
 - **Reaction synchronization** — seamlessly bridge emoji reactions across platforms.
 - **Rich media support** — photos, videos, audio, voice messages, stickers, and generic documents.
-- **WhatsApp Integration** — fully supported scanning via QR code with the `neonize` library.
-- **Long message chunking** — messages exceeding platform limits are automatically split.
 - **Multiple bridges** — group different combinations of chats and platforms together in a single `settings.yaml`.
+- **Flexible Telegram auth** — works as a bot (bot token) or a user account (phone number).
+- **Long message chunking** — messages exceeding platform limits are automatically split.
 - **Simple to setup** — configure `settings.yaml` and you're ready to go.
 - **Docker support** — includes a production-ready `Dockerfile` and `docker-compose.yml`
 
@@ -89,7 +89,7 @@ bridges:
     platforms:
       telegram: -123456        # Telegram chat ID (include the '-')
       discord: 123456789       # Discord channel ID
-      whatsapp: 123456789@g.us  # WhatsApp group JID
+      whatsapp: 123456789@g.us  # WhatsApp chat JID
 
   - name: my homies bridge
     platforms:
@@ -100,7 +100,7 @@ bridges:
 **Finding chat IDs:**
 - **Telegram**: Forward a message to [@userinfobot](https://t.me/userinfobot) or use a Telegram API explorer. Group/channel IDs start with `-100`.
 - **Discord**: Enable Developer Mode in settings, right-click a channel → *Copy Channel ID*.
-- **WhatsApp**: Learn how to get group JIDs [here](https://assistro.co/user-guide/zapier/how-to-send-message-to-a-whatsapp-group-guide-to-fetch-group-id/).
+- **WhatsApp**: Learn how to get chat JIDs [here](https://assistro.co/user-guide/zapier/how-to-send-message-to-a-whatsapp-group-guide-to-fetch-group-id/).
 
 ### 4a. Run directly with Python
 
