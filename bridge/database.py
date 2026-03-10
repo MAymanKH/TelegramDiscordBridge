@@ -87,28 +87,6 @@ async def get_target_msg_id(
         logger.debug("get_target_msg_id failed", exc_info=True)
         return None
 
-async def get_source_msg_id(
-    db_path: str,
-    bridge_name: str,
-    target_platform: str,
-    target_msg_id: int,
-    source_platform: str,
-) -> int | None:
-    """Reverse lookup: given a target message ID, find the original source ID."""
-    try:
-        async with aiosqlite.connect(db_path) as db:
-            async with db.execute(
-                "SELECT source_msg_id FROM message_map "
-                "WHERE bridge_name = ? AND target_platform = ? AND target_msg_id = ? AND source_platform = ? "
-                "ORDER BY id DESC LIMIT 1",
-                (bridge_name, target_platform, target_msg_id, source_platform),
-            ) as cur:
-                row = await cur.fetchone()
-                return row[0] if row else None
-    except Exception:
-        logger.debug("get_source_msg_id failed", exc_info=True)
-        return None
-
 async def resolve_native_id(
     db_path: str,
     bridge_name: str,
@@ -119,13 +97,31 @@ async def resolve_native_id(
     """Find the native message ID on *target_platform* for a message that
     originated on *origin_platform*.
 
-    Checks both directions (source→target and target→source) so it works
-    regardless of which side originally sent the message.
+    Resolves via the canonical source message to support 3+ platforms smoothly.
     """
-    result = await get_target_msg_id(db_path, bridge_name, origin_platform, origin_msg_id, target_platform)
-    if result: return result
+    canonical_platform = origin_platform
+    canonical_msg_id = origin_msg_id
 
-    result = await get_source_msg_id(db_path, bridge_name, origin_platform, origin_msg_id, target_platform)
-    if result: return result
+    # 1. Is the origin message actually a forward from another platform?
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute(
+                "SELECT source_platform, source_msg_id FROM message_map "
+                "WHERE bridge_name = ? AND target_platform = ? AND target_msg_id = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (bridge_name, origin_platform, origin_msg_id),
+            ) as cur:
+                row = await cur.fetchone()
+                if row:
+                    canonical_platform, canonical_msg_id = row[0], row[1]
+    except Exception:
+        logger.debug("canonical source lookup failed", exc_info=True)
 
-    return None
+    # 2. If the target IS the canonical platform, return the canonical ID directly
+    if target_platform == canonical_platform:
+        return canonical_msg_id
+
+    # 3. Otherwise, find how the canonical message was mapped to the target platform
+    return await get_target_msg_id(
+        db_path, bridge_name, canonical_platform, canonical_msg_id, target_platform
+    )
