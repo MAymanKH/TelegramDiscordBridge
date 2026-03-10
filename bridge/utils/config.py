@@ -26,12 +26,15 @@ def load_settings(path: str = "settings.yaml") -> dict:
         return yaml.safe_load(fh)
 
 def get_enabled_platforms(settings: dict) -> list[str]:
-    """Return a sorted list of platform keys defined in *settings*."""
-    return sorted(settings.get("platforms", {}).keys())
+    """Return a sorted list of platform keys discovered from bridge definitions."""
+    names: set[str] = set()
+    for bridge in settings.get("bridges", []):
+        names.update(bridge.get("platforms", {}).keys())
+    return sorted(names)
 
 def get_platform_config(settings: dict, platform_name: str) -> dict:
-    """Return the config dict for a single platform."""
-    return settings["platforms"][platform_name]
+    """Return the config dict for a single platform, or {} if not defined."""
+    return settings.get("platforms", {}).get(platform_name, {})
 
 def get_bridges(settings: dict) -> list[dict]:
     """Return the list of bridge definitions from *settings*.
