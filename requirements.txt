@@ -3,3 +3,4 @@ discord.py>=2.4.0
 TgCrypto>=1.2.5
 pyyaml>=6.0.2
 aiosqlite>=0.19.0
+neonize>=0.3.15
