@@ -1,23 +1,42 @@
-telegram:
-  # Get API ID and API Hash https://core.telegram.org/api/obtaining_api_id
-  api_id: 
-  api_hash: 
-  # Authentication: provide ONE of the following (both are optional).
-  # If neither is set, an interactive session login will be used.
-  # bot_token:    # Bot token from @BotFather (starts the client as a bot)
-  # phone:        # Phone number in international format e.g. +12025551234 (starts as a user)
+# Platform credentials
+# Only include the platforms you want to use.
+platforms:
+  telegram:
+    # Get API ID and API Hash: https://core.telegram.org/api/obtaining_api_id
+    api_id:
+    api_hash:
+    # Authentication: provide ONE of the following (both are optional).
+    # If neither is set, an interactive session login will be used.
+    # bot_token:    # Bot token from @BotFather (starts the client as a bot)
+    # phone:        # Phone number in international format e.g. +12025551234
 
-discord:
-  # Get the token and app ID from your bot's info in https://discord.com/developers/applications/
-  token: 
-  app_id: 
+  discord:
+    # Get the token and app ID from:
+    # https://discord.com/developers/applications/
+    token:
+    app_id:
 
+# Bridges
+# Each bridge links two or more platform chats together.
+# Messages arriving on any chat are forwarded to all other chats
+# in the same bridge.
+# A platform is only started if it appears in at least one bridge.
 bridges:
-  - name: first bridge # Bridges names doesn't matter but they must be different from each other.
-    telegram_chat_id: -123456 # Replace this with your telegram chat id. Inlcude the '-'
-    discord_chat_id: 123456789 # Replace this with your discord chat id.
+  - name: my work bridge # You can name it whatever you want, but make each bridge name different to avoid issues
+    platforms:
+      telegram: -123456        # Telegram chat ID (include the '-')
+      discord: 123456789       # Discord channel ID
+      whatsapp: 123456789@g.us  # WhatsApp group JID
 
-  # Repeat for any number of bridges you want.
-  - name: second bridge
-    telegram_chat_id: -123456
-    discord_chat_id: 123456789
+  - name: my homies bridge
+    platforms:
+      telegram: -654321
+      # discord: 987654321 you can comment out/remove the platforms you don't wanna include in the bridge
+      whatsapp: 987654321@g.us
+
+  # You can define as many bridges as you like:
+  # - name: my another bridge
+  #   platforms:
+  #     telegram: -654321
+  #     discord: 987654321
+  #     whatsapp: 987654321@g.us
