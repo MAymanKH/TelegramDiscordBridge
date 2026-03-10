@@ -1,6 +1,6 @@
 <div align='center'>
-<h1>Telegram Discord Bridge</h1>
-<h3>Simple two-way bridge between Telegram and Discord written in Python</h3>
+<h1>Bridger</h1>
+<h3>Simple multi-way bridge between Telegram, Discord, and WhatsApp written in Python</h3>
 <br>
 <a href="https://github.com/Rapptz/discord.py">
    <img src="https://img.shields.io/badge/discord.py-2.4.0+-blue?" alt="discord.py"/>
@@ -8,6 +8,10 @@
 &nbsp;
 <a href="https://github.com/pyrogram/pyrogram">
    <img src="https://img.shields.io/badge/pyrogram-2.0.106+-blue?" alt="pyrogram"/>
+</a>
+&nbsp;
+<a href="https://github.com/krypton-byte/neonize">
+   <img src="https://img.shields.io/badge/neonize-0.3.15+-blue?" alt="neonize"/>
 </a>
 &nbsp;
 <a href="https://www.python.org/downloads/">
@@ -19,41 +23,40 @@
 
 ## Overview
 
-A lightweight, fully asynchronous Python application that creates two-way bridges between Telegram chats and Discord channels. Messages, media, reactions, and reply threads flow in both directions across any number of configured channel pairs.
+A lightweight, fully asynchronous Python application that creates multi-way bridges between Telegram chats, Discord channels, and WhatsApp groups/chats. Messages, media, reactions, and reply threads flow seamlessly across any number of configured bridges.
 
 ## Features
 
-- **Two-way text bridging** — messages sent in Telegram appear in Discord and vice versa
-- **Reply threading** — replies are matched and threaded on the receiving platform
-- **Reaction synchronization** — support bridging emoji reactions on messages to the other platform
-- **Rich media support** — photos, videos, audio, voice messages, stickers, PDFs, and generic documents
-- **Long message chunking** — messages exceeding 1,800 characters are automatically split
-- **File size guard** — files larger than 8 MB trigger a friendly warning instead of failing silently
-- **Multiple bridges** — configure as many Telegram ↔ Discord pairs as needed in a single `settings.yaml`
-- **Flexible Telegram auth** — works as a bot (bot token) or a user account (phone number)
-- **Simple to setup** — Just a few minutes to fully setup, configure, and run
+- **Multi-way text bridging** — messages sent on any platform in a bridge appear on all others.
+- **Reply threading** — replies are matched and natively threaded on the receiving platforms.
+- **Reaction synchronization** — seamlessly bridge emoji reactions across platforms.
+- **Rich media support** — photos, videos, audio, voice messages, stickers, and generic documents.
+- **WhatsApp Integration** — fully supported scanning via QR code with the `neonize` library.
+- **Long message chunking** — messages exceeding platform limits are automatically split.
+- **Multiple bridges** — group different combinations of chats and platforms together in a single `settings.yaml`.
+- **Simple to setup** — configure `settings.yaml` and you're ready to go.
 - **Docker support** — includes a production-ready `Dockerfile` and `docker-compose.yml`
 
 ## Setup
 
 ### 0. Prerequisites
 
-- [Python](https://www.python.org/downloads/) 3.11 or higher
+- [Python](https://www.python.org/downloads/) 3.11+
 - [Git](https://git-scm.com/install/)
 - [Docker](https://www.docker.com/get-started/) and Docker Compose (optional)
 - Make sure they are added to the PATH environment
 
 ### 1. Credentials
 
-- Create a **Discord Bot** at [discord.com/developers](https://discord.com/developers/applications) and copy the **bot token** and **application ID**. Enable all Privileged Gateway Intents (Message Content, Server Members, Presence).
-- Create a **Telegram Application** at [core.telegram.org](https://core.telegram.org/api/obtaining_api_id) and copy the **API ID** and **API Hash**.
-- Optionally create a Telegram bot via [@BotFather](https://t.me/BotFather) and copy its **bot token** if you prefer running as a bot rather than a user account.
+- **Discord**: Create a Bot at [discord.com/developers](https://discord.com/developers/applications) and copy the **bot token** and **application ID**. Enable all Privileged Gateway Intents (Message Content, Server Members, Presence).
+- **Telegram**: Create an Application at [core.telegram.org](https://core.telegram.org/api/obtaining_api_id) and copy the **API ID** and **API Hash**. Optionally, use a bot token from [@BotFather](https://t.me/BotFather).
+- **WhatsApp**: No prior setup required; you will scan a QR code in the terminal on the first run.
 
 ### 2. Clone the repository
 
 ```bash
-git clone https://github.com/MAymanKH/TelegramDiscordBridge.git
-cd TelegramDiscordBridge
+git clone https://github.com/MAymanKH/Bridger.git
+cd Bridger
 ```
 
 ### 3. Configure `settings.yaml`
@@ -65,31 +68,39 @@ cp example.settings.yaml settings.yaml
 ```
 
 ```yaml
-telegram:
-  api_id: 123456
-  api_hash: your_api_hash_here
+# Platform credentials
+# Only include the platforms you want to use.
+platforms:
+  telegram:
+    api_id: 123456
+    api_hash: your_api_hash_here
   # Choose ONE authentication method (both are optional — omit both for interactive login):
   # bot_token: your_bot_token   # Run as a Telegram bot
   # phone: +12025551234         # Run as a user account
 
-discord:
-  token: your_discord_bot_token
-  app_id: 123456789012345678
+  discord:
+    token: your_discord_bot_token
+    app_id: 123456789012345678
 
+# Bridges
+# Each bridge links two or more platform chats together.
 bridges:
-  - name: my-bridge
-    telegram_chat_id: -1001234567890   # Include the leading '-' for groups/channels
-    discord_chat_id: 987654321098765432
+  - name: my work bridge
+    platforms:
+      telegram: -123456        # Telegram chat ID (include the '-')
+      discord: 123456789       # Discord channel ID
+      whatsapp: 123456789@g.us  # WhatsApp group JID
 
-  # Add more bridges as needed:
-  # - name: another-bridge
-  #   telegram_chat_id: -1009876543210
-  #   discord_chat_id: 111222333444555666
+  - name: my homies bridge
+    platforms:
+      telegram: -654321
+      whatsapp: 987654321@g.us
 ```
 
 **Finding chat IDs:**
-- **Telegram**: Forward a message from the target chat to [@userinfobot](https://t.me/userinfobot), or use a Telegram API explorer. Group/channel IDs start with `-100`.
-- **Discord**: Enable Developer Mode in Discord settings, then right-click a channel → *Copy Channel ID*.
+- **Telegram**: Forward a message to [@userinfobot](https://t.me/userinfobot) or use a Telegram API explorer. Group/channel IDs start with `-100`.
+- **Discord**: Enable Developer Mode in settings, right-click a channel → *Copy Channel ID*.
+- **WhatsApp**: Learn how to get group JIDs [here](https://assistro.co/user-guide/zapier/how-to-send-message-to-a-whatsapp-group-guide-to-fetch-group-id/).
 
 ### 4a. Run directly with Python
 
@@ -111,7 +122,7 @@ docker-compose up -d
 
 `settings.yaml` is mounted read-only into the container. Telegram session data and message queues are stored in named Docker volumes (`telegram-sessions`, `message-data`) so they persist across container restarts.
 
-> On the first run, if you configured a phone number (user account mode), Pyrogram will prompt for a verification code in the terminal. After a successful login the session is saved to `my_bot.session` and subsequent starts require no interaction.
+> On the first run, if you configured a phone number (user account mode) for Telegram, you will be prompted for a verification code in the terminal. And for WhatsApp, you will be prompted to scan a QR code in the terminal. After a successful login the session is saved and subsequent starts require no interaction. 
 
 ## Notes
 
