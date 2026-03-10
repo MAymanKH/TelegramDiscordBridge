@@ -29,9 +29,9 @@ A lightweight, fully asynchronous Python application that creates multi-way brid
 
 - **Multi-way text bridging** — messages sent on any platform in a bridge appear on all others.
 - **Reply threading** — replies are matched and natively threaded on the receiving platforms.
-- **Reaction synchronization** — seamlessly bridge emoji reactions across platforms.
+- **Reaction synchronization** — bridge emoji reactions across platforms.
 - **Rich media support** — photos, videos, audio, voice messages, stickers, and generic documents.
-- **Multiple bridges** — group different combinations of chats and platforms together in a single `settings.yaml`.
+- **Multiple bridges** — configure different combinations of chats and platforms together seamlessly.
 - **Flexible Telegram auth** — works as a bot (bot token) or a user account (phone number).
 - **Long message chunking** — messages exceeding platform limits are automatically split.
 - **Simple to setup** — configure `settings.yaml` and you're ready to go.
@@ -48,9 +48,9 @@ A lightweight, fully asynchronous Python application that creates multi-way brid
 
 ### 1. Credentials
 
-- **Discord**: Create a Bot at [discord.com/developers](https://discord.com/developers/applications) and copy the **bot token** and **application ID**. Enable all Privileged Gateway Intents (Message Content, Server Members, Presence).
-- **Telegram**: Create an Application at [core.telegram.org](https://core.telegram.org/api/obtaining_api_id) and copy the **API ID** and **API Hash**. Optionally, use a bot token from [@BotFather](https://t.me/BotFather).
-- **WhatsApp**: No prior setup required; you will scan a QR code in the terminal on the first run.
+- **Discord (Bot):** Create a Bot at [discord.com/developers](https://discord.com/developers/applications) and copy the bot token and application ID. Enable all Privileged Gateway Intents (Message Content, Server Members, Presence).
+- **Telegram (Bot or User Account):** Create an Application at [core.telegram.org](https://core.telegram.org/api/obtaining_api_id) and copy the API ID and API Hash. Optionally, create a bot and obtain its token from [@BotFather](https://t.me/BotFather) if you want a bot setup.
+- **WhatsApp (User Account):** No prior setup required; you will scan a QR code in the terminal on the first run.
 
 ### 2. Clone the repository
 
@@ -128,4 +128,4 @@ docker-compose up -d
 
 - The Discord bot requires the `Message Content` privileged intent to read message text.
 - Make sure the Telegram bot has read access to the source chats (add it as an admin).
-- This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](https://github.com/MAymanKH/TelegramDiscordBridge/blob/main/LICENSE) file for details.
+- This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](https://github.com/MAymanKH/Bridger/blob/main/LICENSE) file for details.
