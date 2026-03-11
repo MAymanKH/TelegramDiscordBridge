@@ -1,15 +1,32 @@
 """
-Media / attachment helpers and file-type constants.
+Media / attachment helpers and file classification.
 """
 
+import mimetypes
 import os
 from bridge.utils.logger import get_logger
 
 logger = get_logger("media")
 
-# File-type sets
-PHOTO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif"}
-MEDIA_EXTENSIONS = PHOTO_EXTENSIONS | {".webp", ".mp4", ".mp3", ".ogg", ".pdf", ".apk"}
+def classify_attachment(file_path: str, file_ext: str = "") -> str:
+    """Return the outbound attachment kind for *file_path*.
+
+    The result is one of: ``photo``, ``video``, ``audio``, ``voice``,
+    ``sticker``, or ``document``.
+    """
+    ext = (file_ext or os.path.splitext(file_path)[1]).lower()
+    mime_type, _ = mimetypes.guess_type(file_path)
+
+    if ext == ".webp": return "sticker"
+    if ext == ".ogg": return "voice"
+
+    if mime_type:
+        primary_type = mime_type.split("/", 1)[0]
+        if primary_type == "image": return "photo"
+        if primary_type == "video": return "video"
+        if primary_type == "audio": return "audio"
+
+    return "document"
 
 # Helpers
 def get_unique_filepath(directory: str, file_name: str, file_type: str) -> str:

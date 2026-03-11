@@ -7,7 +7,7 @@ import os
 import mimetypes
 from bridge.platforms.base import BasePlatform
 from bridge.utils.config import platform_media_dir
-from bridge.utils.media import get_unique_filepath, PHOTO_EXTENSIONS
+from bridge.utils.media import classify_attachment, get_unique_filepath
 from bridge.utils.logger import get_logger
 from neonize.aioze.client import NewAClient
 from neonize.aioze.events import MessageEv, ConnectedEv, PairStatusEv
@@ -270,6 +270,7 @@ class WhatsAppPlatform(BasePlatform):
         jid = self._jid_for_chat_id(chat_id)
         bridge = self.bridge_name_for_chat(chat_id)
         caption = "" if sender == bridge else f"*{sender}:*"
+        attachment_kind = classify_attachment(file_path, file_ext)
 
         if os.path.getsize(file_path) > FILE_SIZE_LIMIT:
             msg = "File size is over 64MB, can't send it."
@@ -279,10 +280,10 @@ class WhatsAppPlatform(BasePlatform):
 
         sent = None
         try:
-            if file_ext in PHOTO_EXTENSIONS: sent = await self._client.send_image(jid, file_path, caption=caption)
-            elif file_ext == ".mp4": sent = await self._client.send_video(jid, file_path, caption=caption)
-            elif file_ext in (".mp3", ".ogg"): sent = await self._client.send_audio(jid, file_path, ptt=file_ext == ".ogg")
-            elif file_ext == ".webp": sent = await self._client.send_sticker(jid, file_path)
+            if attachment_kind == "photo": sent = await self._client.send_image(jid, file_path, caption=caption)
+            elif attachment_kind == "video": sent = await self._client.send_video(jid, file_path, caption=caption)
+            elif attachment_kind in {"audio", "voice"}: sent = await self._client.send_audio(jid, file_path, ptt=attachment_kind == "voice")
+            elif attachment_kind == "sticker": sent = await self._client.send_sticker(jid, file_path)
             else:
                 filename = os.path.basename(file_path)
                 sent = await self._client.send_document(jid, file_path, caption=caption, filename=filename)

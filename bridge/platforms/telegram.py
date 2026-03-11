@@ -7,7 +7,7 @@ import os
 from pyrogram import Client, filters, types
 from bridge.platforms.base import BasePlatform
 from bridge.utils.config import platform_media_dir
-from bridge.utils.media import get_unique_filepath, PHOTO_EXTENSIONS
+from bridge.utils.media import classify_attachment, get_unique_filepath
 from bridge.utils.logger import get_logger
 
 logger = get_logger("telegram")
@@ -163,6 +163,7 @@ class TelegramPlatform(BasePlatform):
     async def send_file(self, chat_id, file_path: str, file_ext: str, sender: str, reply_to_native_id=None) -> int | None:
         bridge = self.bridge_name_for_chat(chat_id)
         caption = "" if sender == bridge else f"**{sender}:**"
+        attachment_kind = classify_attachment(file_path, file_ext)
 
         if os.path.getsize(file_path) > 8_388_608:
             msg = "File size is over 8MB, can't send it."
@@ -171,12 +172,11 @@ class TelegramPlatform(BasePlatform):
             return None
 
         sent_msg = None
-        if file_ext in PHOTO_EXTENSIONS: sent_msg = await self._app.send_photo(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
-        elif file_ext == ".mp4": sent_msg = await self._app.send_video(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
-        elif file_ext == ".mp3": sent_msg = await self._app.send_audio(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
-        elif file_ext == ".ogg": sent_msg = await self._app.send_voice(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
-        elif file_ext == ".webp": sent_msg = await self._app.send_document(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
-        elif file_ext in (".pdf", ".apk"): sent_msg = await self._app.send_document(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
+        if attachment_kind == "photo": sent_msg = await self._app.send_photo(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
+        elif attachment_kind == "video": sent_msg = await self._app.send_video(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
+        elif attachment_kind == "audio": sent_msg = await self._app.send_audio(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
+        elif attachment_kind == "voice": sent_msg = await self._app.send_voice(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
+        else: sent_msg = await self._app.send_document(chat_id, file_path, caption=caption, reply_to_message_id=reply_to_native_id)
 
         return sent_msg.id if sent_msg else None
 
