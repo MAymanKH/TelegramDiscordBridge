@@ -5,23 +5,23 @@ services:
     build: .
     container_name: telegram-discord-bridge
     restart: unless-stopped
-    
-    # Mount volumes for persistent data
+
     volumes:
-      - ./settings.yaml:/app/settings.yaml:ro  # Read-only config
-      - telegram-sessions:/app/sessions        # Telegram session files
-      - message-data:/app/messages            # Message attachments
-    
-    # Environment variables (optional - can also use settings.yaml)
+      # Settings file with credentials (read-only).
+      - ./settings.yaml:/app/settings.yaml:ro
+
+      # Persistent message-id mapping DB + ephemeral downloaded media +
+      # transcoder workspace. A single mount covers everything the bridge
+      # writes. Without this, every container Recreate loses bridge.db
+      # and reply chains stop linking across restarts.
+      - message-data:/app/messages
+
     environment:
       - PYTHONUNBUFFERED=1
-    
+
     # Optional: Override command for debugging
     # command: python -u main.py
 
-# Named volumes for persistent data
 volumes:
-  telegram-sessions:
-    driver: local
   message-data:
     driver: local
