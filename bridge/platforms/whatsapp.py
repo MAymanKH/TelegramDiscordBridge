@@ -7,8 +7,8 @@ import os
 import mimetypes
 from bridge.platforms.base import BasePlatform
 from bridge.utils.config import platform_media_dir
-from bridge.utils.media import classify_attachment, get_unique_filepath
-from bridge.utils.logger import get_logger
+from bridge.utils.media import classify_attachment, get_unique_filepath, safe_basename
+from bridge.utils.logger import get_logger, safe_for_log
 from neonize.aioze.client import NewAClient
 from neonize.aioze.events import MessageEv, ConnectedEv, PairStatusEv
 from neonize.utils import build_jid
@@ -108,7 +108,9 @@ def _get_media_info(message: MessageEv) -> tuple[str, str]:
         if not ext:
             mime = msg.documentMessage.mimetype or ""
             ext = mimetypes.guess_extension(mime) or ""
-        return name, ext
+        # Sanitize the user-supplied document name (defense in depth — the
+        # downstream get_unique_filepath also sanitizes).
+        return safe_basename(name, fallback="document"), ext
     if msg.stickerMessage.URL: return "sticker", ".webp"
     return "file", ""
 
@@ -167,7 +169,7 @@ class WhatsAppPlatform(BasePlatform):
         if bridge_name is None: return
 
         sender = _get_sender_name(message)
-        logger.info("Message from %s in %s (id=%s)", sender, bridge_name, msg_id)
+        logger.info("Message from %s in %s (id=%s)", safe_for_log(sender), bridge_name, msg_id)
 
         # Reaction
         if _is_reaction(message):
@@ -194,7 +196,7 @@ class WhatsAppPlatform(BasePlatform):
                         replied_to_msg_id=quoted_id,
                     )
                 except Exception:
-                    logger.warning("Failed to download media from %s", sender, exc_info=True)
+                    logger.warning("Failed to download media from %s", safe_for_log(sender), exc_info=True)
 
             # Text (or caption for media)
             text = _get_text(message)
@@ -215,15 +217,15 @@ class WhatsAppPlatform(BasePlatform):
         emoji = reaction.text
         reacted_msg_id = reaction.key.ID
         if not emoji or not reacted_msg_id: return
-        logger.info("Reaction %s from %s on message %s", emoji, sender, reacted_msg_id)
+        logger.info("Reaction %s from %s on message %s", safe_for_log(emoji), safe_for_log(sender), reacted_msg_id)
         await self.router.on_reaction(self.name, bridge_name, reacted_msg_id, emoji, sender)
 
     def _bridge_name_for_jid(self, jid_str: str) -> str | None:
-        """Match a JID string against configured bridge chat IDs."""
+        """Match a JID string against configured bridge **source** JIDs."""
+        from bridge.utils.config import bridge_sources
         for b in self.bridges:
-            platforms = b.get("platforms", {})
-            wa_id = platforms.get(self.name)
-            if wa_id is not None and str(wa_id) == jid_str: return b["name"]
+            wa_ids = bridge_sources(b).get(self.name, [])
+            if any(str(wa_id) == jid_str for wa_id in wa_ids): return b["name"]
         return None
 
     def _jid_for_chat_id(self, chat_id) -> object:
