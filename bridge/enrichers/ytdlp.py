@@ -52,6 +52,14 @@ class YtDlpEnricher(BaseEnricher):
             "--max-filesize", f"{max_mb}M",
             "-o", out_tmpl,
         ]
+        # Optional cookies file — required for login-walled content
+        # (most Facebook / Instagram posts). Export a Netscape-format
+        # cookies.txt from a logged-in browser and point cookies_file at it.
+        cookies = cfg.get("cookies_file")
+        if cookies and os.path.isfile(cookies):
+            args += ["--cookies", cookies]
+        elif cookies:
+            logger.warning("cookies_file %s not found — proceeding without auth", cookies)
         # Caption (if requested) prints at info-extraction; filepath prints
         # after the file is moved into place. yt-dlp emits them in event
         # order, so the filepath is always the LAST stdout line.

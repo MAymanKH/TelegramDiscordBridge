@@ -166,6 +166,7 @@ def bridge_enrich_config(bridge: dict) -> dict | None:
           max_media_mb: 50                # per-file cap before refusing
           max_links: 3                    # max enriched links per message
           quote_original: true            # reply-to the bridged message
+          cookies_file: /app/.../cookies.txt  # yt-dlp auth (FB/IG login wall)
           keep_original_link: true        # informational (always true in MVP)
 
     Returns ``None`` if the key is missing or ``enabled`` is falsy."""
@@ -187,12 +188,15 @@ def bridge_enrich_config(bridge: dict) -> dict | None:
     except (TypeError, ValueError): max_links = 3
     if max_links < 1: max_links = 1
 
+    cookies_file = (str(raw.get("cookies_file")).strip() if raw.get("cookies_file") else "") or None
+
     return {
         "providers": providers,
         "download_media": bool(raw.get("download_media", True)),
         "max_media_mb": max_media_mb,
         "max_links": max_links,
         "quote_original": bool(raw.get("quote_original", True)),
+        "cookies_file": cookies_file,
         "keep_original_link": bool(raw.get("keep_original_link", True)),
     }
 

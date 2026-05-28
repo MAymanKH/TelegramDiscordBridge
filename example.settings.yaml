@@ -226,6 +226,13 @@ bridges:
   #     max_links: 3                    # max enriched links per message
   #     quote_original: true            # reply-to the bridged message that
   #                                     # contained the link (default true)
+  #     # Most Facebook and Instagram posts are login-walled — yt-dlp can't
+  #     # download them without authentication. Export a Netscape-format
+  #     # cookies.txt from a browser logged into FB/IG (e.g. the
+  #     # "Get cookies.txt" extension), mount it into the container, and
+  #     # point cookies_file at it. Without this, FB/IG usually fall back
+  #     # to just the bare link. (X/TikTok don't need it.)
+  #     cookies_file: /app/dis_to_tg/cookies.txt
 
   # Directional: Discord channel → Telegram group (one-way)
   # Replies/messages typed in the Telegram group are NOT sent back to Discord.

@@ -75,7 +75,14 @@ class TestEnricherMatching(unittest.TestCase):
         self.assertTrue(ig.matches("https://instagram.com/p/Abc123/"))
         self.assertTrue(ig.matches("https://www.instagram.com/reel/Xyz789/"))
         self.assertTrue(ig.matches("https://instagram.com/tv/Qwe456"))
-        self.assertFalse(ig.matches("https://instagram.com/someuser"))  # profile, not a post
+        # username-prefixed forms (instagram.com/<user>/reel/<id>/)
+        self.assertTrue(ig.matches("https://www.instagram.com/some.user_1/reel/DXY123/"))
+        self.assertTrue(ig.matches("https://instagram.com/someuser/p/ABC/"))
+        # short domain + share links
+        self.assertTrue(ig.matches("https://instagr.am/p/ABC123/"))
+        self.assertTrue(ig.matches("https://www.instagram.com/share/reel/ABC123/"))
+        # not a post
+        self.assertFalse(ig.matches("https://instagram.com/someuser"))
         self.assertFalse(ig.matches("https://x.com/a/status/1"))
 
     def test_tiktok_matches(self):
@@ -131,6 +138,14 @@ class TestEnrichConfig(unittest.TestCase):
     def test_quote_original_can_disable(self):
         cfg = bridge_enrich_config({"enrich": {"enabled": True, "quote_original": False}})
         self.assertFalse(cfg["quote_original"])
+
+    def test_cookies_file_default_none(self):
+        cfg = bridge_enrich_config({"enrich": {"enabled": True}})
+        self.assertIsNone(cfg["cookies_file"])
+
+    def test_cookies_file_parsed(self):
+        cfg = bridge_enrich_config({"enrich": {"enabled": True, "cookies_file": "/app/x/cookies.txt"}})
+        self.assertEqual(cfg["cookies_file"], "/app/x/cookies.txt")
 
     def test_provider_string_coerced_to_list(self):
         cfg = bridge_enrich_config({"enrich": {"enabled": True, "providers": "twitter"}})
