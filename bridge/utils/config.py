@@ -19,6 +19,10 @@ def platform_media_dir(name: str) -> str:
     """Return the media directory for a given platform (for downloaded files)."""
     return platform_dir(name)
 
+def enrich_media_dir() -> str:
+    """Return the directory where link-enrichment downloads are staged."""
+    return os.path.join(MESSAGES_DIR, "enrich")
+
 # Settings helpers
 def load_settings(path: str = "settings.yaml") -> dict:
     """Load and return the YAML settings file."""
@@ -148,6 +152,49 @@ def effective_always_forward_user_ids(bridge: dict, platform_default) -> set[int
     if "always_forward_user_ids" in bridge:
         return normalize_user_ids(bridge["always_forward_user_ids"])
     return set(platform_default)
+
+
+def bridge_enrich_config(bridge: dict) -> dict | None:
+    """Return the link-enrichment config for *bridge*, or None if disabled.
+
+    Schema::
+
+        enrich:
+          enabled: true
+          providers: [twitter, facebook, instagram, tiktok]  # enrichers to run
+          download_media: true            # download + re-upload media
+          max_media_mb: 50                # per-file cap before refusing
+          max_links: 3                    # max enriched links per message
+          quote_original: true            # reply-to the bridged message
+          keep_original_link: true        # informational (always true in MVP)
+
+    Returns ``None`` if the key is missing or ``enabled`` is falsy."""
+    raw = bridge.get("enrich")
+    if not raw or not raw.get("enabled"): return None
+
+    providers = raw.get("providers")
+    if providers is None:
+        providers = ["twitter", "facebook", "instagram", "tiktok"]
+    elif isinstance(providers, str):
+        providers = [providers]
+    providers = [str(p).strip().lower() for p in providers if p]
+
+    try: max_media_mb = float(raw.get("max_media_mb", 50))
+    except (TypeError, ValueError): max_media_mb = 50.0
+    if max_media_mb < 1: max_media_mb = 1.0
+
+    try: max_links = int(raw.get("max_links", 3))
+    except (TypeError, ValueError): max_links = 3
+    if max_links < 1: max_links = 1
+
+    return {
+        "providers": providers,
+        "download_media": bool(raw.get("download_media", True)),
+        "max_media_mb": max_media_mb,
+        "max_links": max_links,
+        "quote_original": bool(raw.get("quote_original", True)),
+        "keep_original_link": bool(raw.get("keep_original_link", True)),
+    }
 
 
 def is_mention_only(text: str, filters: list[str]) -> bool:

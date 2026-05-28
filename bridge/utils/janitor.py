@@ -88,6 +88,11 @@ class MediaJanitor:
         # Bridge-owned transcode output (current location: messages/transcoded/).
         from bridge.utils.transcode import TRANSCODE_DIR
         deleted += _sweep_dir(TRANSCODE_DIR, cutoff, predicate=_is_bridge_transcode_temp)
+        # Link-enrichment download staging (messages/enrich/). Files are
+        # normally removed right after upload via on_file; this is the
+        # safety net for failed uploads. Dedicated dir, so sweep all.
+        from bridge.utils.config import enrich_media_dir
+        deleted += _sweep_dir(enrich_media_dir(), cutoff, predicate=lambda _name: True)
         # Legacy: pre-0.2 installs wrote transcoded files to /tmp directly.
         deleted += _sweep_dir(tempfile.gettempdir(), cutoff, predicate=_is_bridge_transcode_temp)
         if deleted:

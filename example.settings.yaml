@@ -199,6 +199,32 @@ bridges:
   #                               # are held until the digest fires and
   #                               # arrive together with the text thread.
 
+  # Link enrichment: when a bridged message contains a supported link,
+  # fetch the post and append its text + media to the OTHER side as a
+  # follow-up. The original message (with the link) is always forwarded
+  # unchanged. Only allowlisted hosts are ever fetched (SSRF guard).
+  # Failures fall back to just the bare link. Not applied on digest bridges.
+  #   X / Twitter: single-post text + media via the free fxtwitter API
+  #     (no thread unroll in this version).
+  #   Facebook:    public video/reel media via yt-dlp (no caption).
+  #   Instagram:   public post/reel media + caption via yt-dlp.
+  #   TikTok:      public video + caption via yt-dlp.
+  # (Instagram/Facebook private or photo-only posts are often login-walled
+  #  and will simply yield nothing.)
+  # - name: link-enriching bridge
+  #   from:
+  #     telegram: -123456
+  #   to:
+  #     discord: 987654321
+  #   enrich:
+  #     enabled: true
+  #     providers: [twitter, facebook, instagram, tiktok]  # which to run
+  #     download_media: true            # download + re-upload media
+  #     max_media_mb: 50                # per-file cap before refusing
+  #     max_links: 3                    # max enriched links per message
+  #     quote_original: true            # reply-to the bridged message that
+  #                                     # contained the link (default true)
+
   # Directional: Discord channel → Telegram group (one-way)
   # Replies/messages typed in the Telegram group are NOT sent back to Discord.
   # - name: discord news mirror
