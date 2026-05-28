@@ -14,7 +14,13 @@ from bridge.platforms.telegram import TelegramPlatform
 from bridge.platforms.discord import DiscordPlatform
 from bridge.platforms.whatsapp import WhatsAppPlatform
 
-SETTINGS_PATH = "settings.yaml"
+# Where to read the YAML config from. Defaults to ``settings.yaml`` in
+# CWD (works for local dev with `python main.py`). Override via env when
+# you'd rather mount a config directory than a single file — e.g. the
+# bundled docker-compose.yml sets this to ``/app/dis_to_tg/settings.yaml``
+# so it can mount ``./dis_to_tg/`` and bind multiple per-deploy artifacts
+# next to settings.yaml.
+SETTINGS_PATH = os.environ.get("BRIDGER_SETTINGS_PATH") or "settings.yaml"
 
 def _version_string() -> str:
     """Compose ``v<semver>`` plus optional ``+<sha>`` if a build supplied

@@ -7,8 +7,12 @@ services:
     restart: unless-stopped
 
     volumes:
-      # Settings file with credentials (read-only).
-      - ./settings.yaml:/app/settings.yaml:ro
+      # Config directory (read-only). Put your settings.yaml inside
+      # ./dis_to_tg/ on the host. Mounting the directory (instead of the
+      # single file) lets you keep alternate configs, certs, or per-
+      # deployment overrides next to settings.yaml and bind them all
+      # together with one mount.
+      - ./dis_to_tg:/app/dis_to_tg:ro
 
       # Persistent message-id mapping DB + ephemeral downloaded media +
       # transcoder workspace. A single mount covers everything the bridge
@@ -18,6 +22,10 @@ services:
 
     environment:
       - PYTHONUNBUFFERED=1
+      # Point the bridge at the settings file inside the mounted directory.
+      # Override BRIDGER_SETTINGS_PATH if you mount the config dir
+      # somewhere else.
+      - BRIDGER_SETTINGS_PATH=/app/dis_to_tg/settings.yaml
 
     # Optional: Override command for debugging
     # command: python -u main.py
