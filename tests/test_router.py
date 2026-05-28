@@ -214,6 +214,86 @@ class TestRouterDispatch(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body.count("Alice ·"), 2)
         self.assertEqual(body.count("Bob ·"), 1)
 
+    async def test_enrichment_media_only_sends_no_text(self):
+        """A media-only enrichment (e.g. Facebook, no caption) must NOT emit
+        a bare attribution message like '📘 Facebook' — only the media."""
+        from unittest.mock import patch
+        from bridge.enrichers.base import EnrichResult
+        import tempfile, os as _os
+
+        bridges = [{
+            "name": "b",
+            "platforms": {"telegram": -100, "discord": 200},
+            "enrich": {"enabled": True, "providers": ["facebook"], "download_media": True},
+        }]
+        router = Router(self.platforms, bridges, db_path=":memory:")
+
+        tf = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        tf.write(b"vid"); tf.close()
+
+        class _FakeFb:
+            def matches(self, url): return "facebook" in url
+            async def enrich(self, url, cfg, dest_dir):
+                # No author text, no caption — just a video file.
+                return EnrichResult(author="Facebook", text="", media=[(tf.name, ".mp4")], icon="📘", source_url=url)
+
+        try:
+            with patch("bridge.enrichers.get_enricher", return_value=_FakeFb()), \
+                 patch("bridge.enrichers.extract_urls", return_value=["https://fb.watch/abc/"]):
+                # Original link message goes through (1 text), then enrichment.
+                await router.on_message("telegram", "b", 1, "vid https://fb.watch/abc/", "Alice")
+        finally:
+            try: _os.remove(tf.name)
+            except OSError: pass
+
+        # Exactly ONE text (the original message) — no "📘 Facebook" follow-up.
+        self.assertEqual(len(self.dc.sent_text), 1)
+        self.assertNotIn("📘", self.dc.sent_text[0][1])
+        # The media WAS delivered.
+        self.assertEqual(len(self.dc.sent_files), 1)
+
+    async def test_digest_folds_in_enrichment_ordered(self):
+        """On a digest+enrich bridge, the enriched text is buffered into the
+        SAME digest and ordered right after the link by source_ts — even
+        though enrichment is fetched 'later'."""
+        from unittest.mock import patch
+        from bridge.enrichers.base import EnrichResult
+
+        bridges = [{
+            "name": "b",
+            "platforms": {"telegram": -100, "discord": 200},
+            "digest": {"enabled": True, "wait_seconds": 0.2},
+            "enrich": {"enabled": True, "providers": ["twitter"], "download_media": False},
+        }]
+        router = Router(self.platforms, bridges, db_path=":memory:")
+
+        # Fake enricher: returns text for any x.com URL, no media.
+        class _FakeEnricher:
+            def matches(self, url): return "x.com" in url
+            async def enrich(self, url, cfg, dest_dir):
+                return EnrichResult(author="Tweeter", text="the tweet body", icon="🐦", source_url=url)
+
+        with patch("bridge.enrichers.get_enricher", return_value=_FakeEnricher()), \
+             patch("bridge.enrichers.extract_urls", return_value=["https://x.com/a/status/1"]):
+            # Alice posts a link at ts=100, Bob chats at ts=200.
+            await router.on_message("telegram", "b", 1, "look https://x.com/a/status/1", "Alice", source_ts=100.0)
+            await router.on_message("telegram", "b", 2, "nice", "Bob", source_ts=200.0)
+            await asyncio.sleep(0.5)
+
+        self.assertEqual(len(self.dc.sent_text), 1)
+        body = self.dc.sent_text[0][1]
+        # All three present: Alice's link, the enrichment, Bob's chat.
+        self.assertIn("look https://x.com/a/status/1", body)
+        self.assertIn("the tweet body", body)
+        self.assertIn("nice", body)
+        # Ordering: Alice's message, then the enrichment (same ts=100,
+        # inserted after), then Bob (ts=200) — all before Bob.
+        i_link = body.index("look https://x.com")
+        i_enrich = body.index("the tweet body")
+        i_bob = body.index("nice")
+        self.assertLess(i_link, i_enrich, f"enrichment before link:\n{body}")
+        self.assertLess(i_enrich, i_bob, f"Bob before enrichment:\n{body}")
+
     async def test_digest_skips_empty_content(self):
         """Whitespace-only or empty messages don't get a block."""
         bridges = [{

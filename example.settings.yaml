@@ -203,7 +203,9 @@ bridges:
   # fetch the post and append its text + media to the OTHER side as a
   # follow-up. The original message (with the link) is always forwarded
   # unchanged. Only allowlisted hosts are ever fetched (SSRF guard).
-  # Failures fall back to just the bare link. Not applied on digest bridges.
+  # Failures fall back to just the bare link. On digest bridges the
+  # enriched text + media are folded into the same digest, ordered right
+  # after the link by the original message's timestamp.
   #   X / Twitter: single-post text + media via the free fxtwitter API
   #     (no thread unroll in this version).
   #   Facebook:    public video/reel media via yt-dlp (no caption).

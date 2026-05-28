@@ -78,11 +78,19 @@ class Router:
             logger.warning("on_message: unknown bridge '%s'", bridge_name)
             return
 
-        # Digest mode: buffer text messages, flush as a formatted thread.
-        # Media (on_file) and reactions are NOT buffered — only on_message.
+        enrich_cfg = bridge_enrich_config(bridge)
+
+        # Digest mode: buffer the message, then (if enrichment is on) buffer
+        # the enriched text + media into the SAME digest. The source-ts sort
+        # at flush time keeps everything in chronological order even though
+        # enrichment is fetched asynchronously and added a moment later.
         digest_cfg = bridge_digest_config(bridge)
         if digest_cfg:
             await self._enqueue_digest(bridge, source_platform, sender, content, digest_cfg, source_ts=source_ts)
+            if enrich_cfg and content:
+                await self._enrich_and_dispatch(
+                    bridge, source_platform, source_msg_id, content, enrich_cfg, source_ts=source_ts,
+                )
             return
 
         for tgt_name, chat_id, tgt_platform in self._other_platforms_in_bridge(bridge, source_platform):
@@ -103,11 +111,11 @@ class Router:
                 )
 
         # Link enrichment runs AFTER the original is delivered ("keep link +
-        # append enrichment"). Non-digest bridges only — digest bridges skip
-        # enrichment for now (the digest already buffers everything).
-        enrich_cfg = bridge_enrich_config(bridge)
+        # append enrichment").
         if enrich_cfg and content:
-            await self._enrich_and_dispatch(bridge, source_platform, source_msg_id, content, enrich_cfg)
+            await self._enrich_and_dispatch(
+                bridge, source_platform, source_msg_id, content, enrich_cfg, source_ts=source_ts,
+            )
 
     async def on_file(
         self,
@@ -174,20 +182,29 @@ class Router:
     # Link enrichment ----------------------------------------------------
 
     async def _enrich_and_dispatch(self, bridge: dict, source_platform: str,
-                                   source_msg_id, content: str, cfg: dict) -> None:
-        """Scan *content* for supported links, enrich each, and append the
+                                   source_msg_id, content: str, cfg: dict,
+                                   source_ts: float | None = None) -> None:
+        """Scan *content* for supported links, enrich each, and deliver the
         result (text + media) to the other platforms in the bridge.
 
-        When ``quote_original`` is set, the enriched follow-up is sent as a
-        reply to the bridged copy of the original message on each
-        destination — so the enrichment is visually attached to the link
-        that triggered it."""
+        Two modes:
+        * **Non-digest** — enriched text is sent immediately (per-target
+          escaped) and, when ``quote_original`` is set, as a reply to the
+          bridged copy of the message that carried the link. Media goes
+          through ``on_file`` (immediate fan-out).
+        * **Digest** — enriched text + media are buffered into the SAME
+          digest, attributed to the post's author and stamped with the
+          original message's ``source_ts`` so the flush sorts them right
+          after the link. Quote-reply doesn't apply (the digest is one
+          thread).
+        """
         from bridge.enrichers import extract_urls, get_enricher
         urls = extract_urls(content)
         if not urls: return
         dest_dir = enrich_media_dir()
         bridge_name = bridge["name"]
-        quote = cfg.get("quote_original", True)
+        digest_cfg = bridge_digest_config(bridge)
+        quote = cfg.get("quote_original", True) and digest_cfg is None
         enriched = 0
         for url in urls:
             if enriched >= cfg["max_links"]: break
@@ -201,30 +218,42 @@ class Router:
                 continue
             if result is None: continue
 
-            # Text follow-up — per-target escaped (raw site content is
-            # untrusted) and optionally a reply to the bridged original.
-            if result.text or result.author:
-                for tgt_name, chat_id, tgt_platform in self._other_platforms_in_bridge(bridge, source_platform):
-                    body = _format_enrichment(result, tgt_platform.escape_user_text)
-                    if not body: continue
-                    reply_id = None
-                    if quote:
-                        reply_id = await database.resolve_native_id(
-                            self.db_path, bridge_name, source_platform, source_msg_id, tgt_name,
-                        )
-                    await tgt_platform.send_text(chat_id, body, bridge_name, reply_to_native_id=reply_id)
+            # Attribution label for the post (icon + author).
+            label = f"{result.icon} {result.author}".strip() if result.author else (result.icon or "🔗")
 
-            # Media follow-up — route through on_file to reuse the size caps,
-            # transcoding, and cleanup. `save_mapping=False` keeps enriched
-            # media out of the reply-resolution table (it isn't itself a
-            # reply target). `replied_to_msg_id=source_msg_id` makes it quote
-            # the bridged original.
+            # --- TEXT ---
+            # Only emit a text follow-up when there's actual post text. A
+            # bare author line ("📘 Facebook") with no content is noise —
+            # the media + its quote/placeholder already carry attribution.
+            if result.text and result.text.strip():
+                if digest_cfg is not None:
+                    # Buffer into the digest as its own block, ordered by the
+                    # original message's timestamp.
+                    await self._enqueue_digest(
+                        bridge, source_platform, label, result.text or "", digest_cfg, source_ts=source_ts,
+                    )
+                else:
+                    for tgt_name, chat_id, tgt_platform in self._other_platforms_in_bridge(bridge, source_platform):
+                        body = _format_enrichment(result, tgt_platform.escape_user_text)
+                        if not body: continue
+                        reply_id = None
+                        if quote:
+                            reply_id = await database.resolve_native_id(
+                                self.db_path, bridge_name, source_platform, source_msg_id, tgt_name,
+                            )
+                        await tgt_platform.send_text(chat_id, body, bridge_name, reply_to_native_id=reply_id)
+
+            # --- MEDIA ---
+            # on_file is already digest-aware: in digest mode it buffers the
+            # file + a placeholder line; otherwise it fans out immediately.
+            # save_mapping=False keeps enriched media out of the reply table.
             for media_path, media_ext in result.media:
                 await self.on_file(
                     source_platform, bridge_name, source_msg_id,
-                    media_path, media_ext, bridge_name,
+                    media_path, media_ext, (label if digest_cfg is not None else bridge_name),
                     replied_to_msg_id=(source_msg_id if quote else None),
                     save_mapping=False,
+                    source_ts=source_ts,
                 )
 
     async def on_reaction(
