@@ -14,13 +14,33 @@ from bridge.platforms.telegram import TelegramPlatform
 from bridge.platforms.discord import DiscordPlatform
 from bridge.platforms.whatsapp import WhatsAppPlatform
 
-# Where to read the YAML config from. Defaults to ``settings.yaml`` in
-# CWD (works for local dev with `python main.py`). Override via env when
-# you'd rather mount a config directory than a single file — e.g. the
-# bundled docker-compose.yml sets this to ``/app/dis_to_tg/settings.yaml``
-# so it can mount ``./dis_to_tg/`` and bind multiple per-deploy artifacts
-# next to settings.yaml.
-SETTINGS_PATH = os.environ.get("BRIDGER_SETTINGS_PATH") or "settings.yaml"
+def _resolve_settings_path() -> str:
+    """Find the settings file, tolerant of env/mount drift.
+
+    Preference order:
+      1. ``BRIDGER_SETTINGS_PATH`` env var (if it points at a real file)
+      2. ``settings.yaml`` in CWD (local `python main.py`)
+      3. ``/app/settings.yaml`` (legacy single-file Docker mount)
+      4. ``/app/dis_to_tg/settings.yaml`` (config-directory Docker mount)
+
+    Returning the first one that EXISTS means a deploy where the env var
+    and the actual volume mount disagree (e.g. env says the dir-mount path
+    but settings is still bound as /app/settings.yaml) self-heals instead
+    of crash-looping. If none exist, returns the preferred path so the
+    startup error names the location the operator most likely intended."""
+    env_path = (os.environ.get("BRIDGER_SETTINGS_PATH") or "").strip()
+    candidates: list[str] = []
+    if env_path: candidates.append(env_path)
+    for default in ("settings.yaml", "/app/settings.yaml", "/app/dis_to_tg/settings.yaml"):
+        if default not in candidates:
+            candidates.append(default)
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return candidates[0]
+
+
+SETTINGS_PATH = _resolve_settings_path()
 
 def _version_string() -> str:
     """Compose ``v<semver>`` plus optional ``+<sha>`` if a build supplied
@@ -86,6 +106,7 @@ async def main() -> int:
     fatal startup errors that the operator needs to fix.
     """
     logger.info("Bridger %s starting", _version_string())
+    logger.info("Using settings file: %s", SETTINGS_PATH)
     _warn_if_settings_world_readable(SETTINGS_PATH)
 
     try:

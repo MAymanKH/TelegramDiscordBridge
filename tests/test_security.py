@@ -9,6 +9,7 @@ a hostile user could write outside the media directory.
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from bridge.utils.media import safe_basename, get_unique_filepath
 
@@ -361,6 +362,56 @@ class TestStartupErrorHandling(unittest.IsolatedAsyncioTestCase):
                 rc = await bridger_main.main()
             # Non-zero — operator needs to fix something.
             self.assertEqual(rc, 2)
+
+
+class TestSettingsPathResolution(unittest.TestCase):
+    """Settings-path resolution must self-heal env/mount drift: if
+    BRIDGER_SETTINGS_PATH points at a non-existent file but settings.yaml
+    exists at a standard location, use the existing one."""
+
+    def setUp(self):
+        import sys
+        from unittest.mock import MagicMock
+        for m in ["aiosqlite", "pyrogram", "pyrogram.enums",
+                  "discord", "discord.ext", "discord.ext.commands",
+                  "neonize", "neonize.aioze", "neonize.aioze.client",
+                  "neonize.aioze.events", "neonize.utils",
+                  "neonize.proto", "neonize.proto.waE2E",
+                  "neonize.proto.waE2E.WAWebProtobufsE2E_pb2"]:
+            sys.modules.setdefault(m, MagicMock())
+
+    def test_env_path_used_when_it_exists(self):
+        import tempfile, os as _os
+        import main as bridger_main
+        with tempfile.TemporaryDirectory() as d:
+            p = _os.path.join(d, "settings.yaml")
+            open(p, "w").close()
+            with patch.dict(_os.environ, {"BRIDGER_SETTINGS_PATH": p}):
+                self.assertEqual(bridger_main._resolve_settings_path(), p)
+
+    def test_falls_back_when_env_path_missing(self):
+        import tempfile, os as _os
+        import main as bridger_main
+        with tempfile.TemporaryDirectory() as d:
+            # env points at a path that does NOT exist
+            missing = _os.path.join(d, "nope", "settings.yaml")
+            fallback = _os.path.join(d, "settings.yaml")
+            open(fallback, "w").close()
+            # Run from inside d so the bare "settings.yaml" candidate resolves.
+            cwd = _os.getcwd()
+            try:
+                _os.chdir(d)
+                with patch.dict(_os.environ, {"BRIDGER_SETTINGS_PATH": missing}):
+                    self.assertEqual(bridger_main._resolve_settings_path(), "settings.yaml")
+            finally:
+                _os.chdir(cwd)
+
+    def test_returns_preferred_when_nothing_exists(self):
+        import os as _os
+        import main as bridger_main
+        with patch.dict(_os.environ, {"BRIDGER_SETTINGS_PATH": "/definitely/not/here.yaml"}):
+            # Nothing exists → returns the env path so the error names it.
+            self.assertEqual(bridger_main._resolve_settings_path(), "/definitely/not/here.yaml")
 
 
 class TestLoggingResilience(unittest.TestCase):
