@@ -20,6 +20,10 @@ services:
       # and reply chains stop linking across restarts.
       - message-data:/app/messages
 
+      # Rotating logs (bridge.log, 5 MB x 3 backups). Bind-mounted so you
+      # can tail / inspect them from the host without docker logs.
+      - ./logs:/app/logs
+
     environment:
       - PYTHONUNBUFFERED=1
       # Point the bridge at the settings file inside the mounted directory.

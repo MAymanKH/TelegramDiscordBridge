@@ -363,6 +363,28 @@ class TestStartupErrorHandling(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(rc, 2)
 
 
+class TestLoggingResilience(unittest.TestCase):
+    """A non-writable log directory (e.g. a Docker bind mount the
+    container user can't write) must NOT crash startup — file logging
+    degrades to console-only."""
+
+    def test_file_handler_failure_does_not_raise(self):
+        import importlib
+        from unittest.mock import patch
+        import bridge.utils.logger as logmod
+        # Force a fresh, unconfigured logger module state.
+        importlib.reload(logmod)
+        with patch.object(logmod, "RotatingFileHandler",
+                          side_effect=OSError("[Errno 13] Permission denied")):
+            # Must not raise despite the file handler blowing up.
+            logmod.setup_logging(log_dir="/nonexistent/should/not/matter")
+        root = __import__("logging").getLogger("bridge")
+        # Console handler still present → logging works.
+        self.assertTrue(any(h.__class__.__name__ == "StreamHandler" for h in root.handlers))
+        # Reset so other tests / real runs reconfigure cleanly.
+        importlib.reload(logmod)
+
+
 class TestTimezoneApply(unittest.TestCase):
     """`_apply_timezone` should update os.environ['TZ'] when the
     settings key is present, and be a no-op when missing."""

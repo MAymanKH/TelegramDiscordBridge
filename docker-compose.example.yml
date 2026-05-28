@@ -25,6 +25,14 @@ services:
       # gives you visibility for debugging.
       - /share/CACHEDEV1_DATA/Public/_data/dis_to_tg/messages:/app/messages
 
+      # Rotating logs (bridge.log, 5 MB x 3 backups) — read them from the
+      # host instead of `docker logs`. NOTE: the container runs as a
+      # non-root `app` user, so this host directory must be writable by
+      # that user — `chmod 777` it (or chown to uid 1000) before first
+      # start. If it isn't, file logging is skipped (console logging still
+      # works) rather than crashing the bridge.
+      - /share/CACHEDEV1_DATA/Public/_data/dis_to_tg/logs:/app/logs
+
     # Drop core dumps and limit resource use — protects the NAS if a
     # malicious media file gets ffmpeg into a runaway state.
     ulimits:
