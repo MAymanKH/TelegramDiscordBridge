@@ -104,11 +104,14 @@ def bridge_digest_config(bridge: dict) -> dict | None:
     try: wait = float(raw.get("wait_seconds", 300))
     except (TypeError, ValueError): wait = 300.0
     if wait < 0.1: wait = 0.1
+    # Default 180s (3 min). Forces a flush at least every 3 minutes
+    # when the chat keeps debouncing — otherwise an always-active channel
+    # could push the digest off indefinitely. Explicitly set 0 to disable.
     try:
         max_wait_raw = raw.get("max_wait_seconds")
-        max_wait = float(max_wait_raw) if max_wait_raw is not None else 0.0
+        max_wait = float(max_wait_raw) if max_wait_raw is not None else 180.0
     except (TypeError, ValueError):
-        max_wait = 0.0
+        max_wait = 180.0
     if max_wait < 0: max_wait = 0.0
     return {
         "wait_seconds": wait,

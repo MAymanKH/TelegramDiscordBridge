@@ -245,7 +245,7 @@ class TestBridgeDigestConfig(unittest.TestCase):
     def test_enabled_default_wait(self):
         self.assertEqual(
             bridge_digest_config({"digest": {"enabled": True}}),
-            {"wait_seconds": 300.0, "max_wait_seconds": 0.0, "buffer_media": False},
+            {"wait_seconds": 300.0, "max_wait_seconds": 180.0, "buffer_media": False},
         )
 
     def test_explicit_wait(self):
@@ -272,8 +272,14 @@ class TestBridgeDigestConfig(unittest.TestCase):
         cfg = bridge_digest_config({"digest": {"enabled": True, "buffer_media": True}})
         self.assertTrue(cfg["buffer_media"])
 
-    def test_max_wait_default_disabled(self):
+    def test_max_wait_default_is_three_minutes(self):
+        # Default 3 min — a hyperactive chat can't push the digest off
+        # indefinitely. Explicitly set 0 to disable.
         cfg = bridge_digest_config({"digest": {"enabled": True}})
+        self.assertEqual(cfg["max_wait_seconds"], 180.0)
+
+    def test_max_wait_explicit_zero_disables(self):
+        cfg = bridge_digest_config({"digest": {"enabled": True, "max_wait_seconds": 0}})
         self.assertEqual(cfg["max_wait_seconds"], 0.0)
 
     def test_max_wait_explicit(self):
@@ -284,9 +290,10 @@ class TestBridgeDigestConfig(unittest.TestCase):
         cfg = bridge_digest_config({"digest": {"enabled": True, "max_wait_seconds": "120"}})
         self.assertEqual(cfg["max_wait_seconds"], 120.0)
 
-    def test_max_wait_invalid_falls_back_to_zero(self):
+    def test_max_wait_invalid_falls_back_to_default(self):
+        # Bad input → 3-min default, same as if the key were absent.
         cfg = bridge_digest_config({"digest": {"enabled": True, "max_wait_seconds": "abc"}})
-        self.assertEqual(cfg["max_wait_seconds"], 0.0)
+        self.assertEqual(cfg["max_wait_seconds"], 180.0)
 
     def test_max_wait_negative_clamped(self):
         cfg = bridge_digest_config({"digest": {"enabled": True, "max_wait_seconds": -10}})

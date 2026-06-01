@@ -177,12 +177,12 @@ bridges:
   #                       this timer, so a back-and-forth conversation
   #                       gets bundled into one digest once the chat
   #                       finally goes quiet for `wait_seconds`.
-  #   max_wait_seconds  — optional hard cap from the FIRST message in a
-  #                       cycle. If a channel never goes quiet, the
-  #                       debounce timer would never fire — this knob
-  #                       guarantees a flush at most every
-  #                       max_wait_seconds. Set to 0 / unset to disable
-  #                       (pure debounce, no cap).
+  #   max_wait_seconds  — hard cap from the FIRST message in a cycle.
+  #                       Default 180 (3 min). If a channel never goes
+  #                       quiet, the debounce timer would never fire —
+  #                       this guarantees a flush at most every
+  #                       max_wait_seconds. Set 0 to disable (pure
+  #                       debounce, no cap — risky for hyperactive chats).
   #
   # Useful for high-volume chats — one digest per natural conversation
   # gap, rather than dozens of individual cross-posts.
