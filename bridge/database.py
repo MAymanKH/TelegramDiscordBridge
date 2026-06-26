@@ -2,6 +2,7 @@
 SQLite database helpers for the unified message-mapping store.
 """
 
+import os
 import time
 import aiosqlite
 from bridge.utils.logger import get_logger
@@ -38,6 +39,12 @@ async def init_db(db_path: str) -> None:
         await db.execute(_CREATE_INDEX_SOURCE_SQL)
         await db.execute(_CREATE_INDEX_TARGET_SQL)
         await db.commit()
+    # Restrict to owner — bridge.db contains user activity history; mode
+    # 0o644 (default umask) makes it readable to everyone with the same
+    # uid namespace. POSIX-only; Windows ACLs aren't translated.
+    if os.name == "posix":
+        try: os.chmod(db_path, 0o600)
+        except OSError as exc: logger.warning("chmod %s failed: %s", db_path, exc)
     logger.info("Database initialized: %s", db_path)
 
 async def save_message_mapping(
@@ -86,6 +93,50 @@ async def get_target_msg_id(
     except Exception:
         logger.debug("get_target_msg_id failed", exc_info=True)
         return None
+
+async def prune_old_mappings(db_path: str, older_than_seconds: float) -> int:
+    """Delete message-id mappings whose ``created_at`` is older than the
+    given threshold. Returns the number of rows removed.
+
+    Bridge mappings are unbounded by default — every forwarded message
+    adds a row. Without periodic pruning a long-lived or chatty bridge
+    will eventually exhaust disk. We trade a tiny window of "lost reply
+    context" (replies to very old messages no longer resolve) for
+    bounded growth."""
+    cutoff_ms = int((time.time() - older_than_seconds) * 1000)
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            cur = await db.execute(
+                "DELETE FROM message_map WHERE created_at < ?",
+                (cutoff_ms,),
+            )
+            await db.commit()
+            return cur.rowcount or 0
+    except Exception:
+        logger.warning("prune_old_mappings failed", exc_info=True)
+        return 0
+
+async def is_message_bridged(
+    db_path: str,
+    bridge_name: str,
+    platform: str,
+    msg_id: int,
+) -> bool:
+    """Return True if *msg_id* on *platform* has any record in this bridge —
+    either as the source or the target of a forward."""
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute(
+                "SELECT 1 FROM message_map WHERE bridge_name = ? AND ("
+                "(source_platform = ? AND source_msg_id = ?) OR "
+                "(target_platform = ? AND target_msg_id = ?)"
+                ") LIMIT 1",
+                (bridge_name, platform, msg_id, platform, msg_id),
+            ) as cur:
+                return await cur.fetchone() is not None
+    except Exception:
+        logger.debug("is_message_bridged failed", exc_info=True)
+        return False
 
 async def resolve_native_id(
     db_path: str,

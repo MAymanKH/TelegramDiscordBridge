@@ -1,0 +1,56 @@
+# Reference docker-compose for self-hosting Bridger on a NAS.
+# Copy to docker-compose.yml and adjust the host paths for your setup.
+# Container Station picks this up under Applications.
+
+services:
+  bridger:
+    # Replace with your own registry / repo (or a local build).
+    image: yourname/bridger:latest
+    container_name: telegram-discord-bridge
+    restart: unless-stopped
+
+    # All persistent state lives under /app/messages inside the container:
+    #   - bridge.db          (message-id mappings)
+    #   - <platform>/        (downloaded source media, briefly)
+    #   - transcoded/        (ffmpeg output, briefly — janitor cleans up)
+    # A single host mount on /app/messages covers everything.
+    volumes:
+      # Settings file with credentials (read-only). Match this to wherever
+      # YOUR settings.yaml lives on the host.
+      - /share/CACHEDEV1_DATA/Public/_config/dis_to_tg/settings.yaml:/app/settings.yaml:ro
+
+      # Persistent message storage + transcoder workspace. Files inside
+      # messages/transcoded/ are short-lived (deleted right after upload,
+      # or by the janitor after max_age_seconds) but mounting the parent
+      # gives you visibility for debugging.
+      - /share/CACHEDEV1_DATA/Public/_data/dis_to_tg/messages:/app/messages
+
+      # Rotating logs (bridge.log, 5 MB x 3 backups) — read them from the
+      # host instead of `docker logs`. NOTE: the container runs as a
+      # non-root `app` user, so this host directory must be writable by
+      # that user — `chmod 777` it (or chown to uid 1000) before first
+      # start. If it isn't, file logging is skipped (console logging still
+      # works) rather than crashing the bridge.
+      - /share/CACHEDEV1_DATA/Public/_data/dis_to_tg/logs:/app/logs
+
+    # Drop core dumps and limit resource use — protects the NAS if a
+    # malicious media file gets ffmpeg into a runaway state.
+    ulimits:
+      core: 0
+    mem_limit: 1g
+    cpus: 1.5
+
+    # Optional: set timezone for human-readable timestamps in logs and
+    # digest headers. The settings.yaml `timezone:` key takes precedence
+    # if you set both. Either works; this is convenient if you'd rather
+    # not edit settings.yaml.
+    # environment:
+    #   TZ: Europe/Berlin
+
+    # Optional: pin the transcoder output to a different path. Useful if
+    # you want it on a tmpfs (faster, doesn't survive restart) or on a
+    # separate spinning-disk volume to keep ffmpeg I/O off the SSD.
+    # environment:
+    #   BRIDGER_TRANSCODE_DIR: /tmp/bridger-xcode
+    # tmpfs:
+    #   - /tmp/bridger-xcode:size=2g

@@ -1,3 +1,29 @@
+# Global options
+
+# Timezone for human-readable timestamps (digest message headers, etc.).
+# Accepts any tzdata zone name. Default is the container's own setting,
+# which is UTC for stock Docker images. Hot-reloadable.
+# timezone: Europe/Berlin
+
+# Forward reactions (👍 etc.) as "> sender reacted with X" notifications to
+# the other side. Default: false (keeps reaction noise local). Set true to
+# bridge reaction notifications across platforms.
+# forward_reactions: true
+
+# Periodic janitor — sweeps orphaned media files AND prunes old DB rows so
+# bridge.db can't grow without bound on a long-lived or chatty bridge.
+# - max_age_seconds: file age (mtime) above which media is considered orphaned
+# - interval_seconds: how often to scan
+# - db_ttl_seconds: drop message_map rows older than this from bridge.db.
+#   Side-effect: replies to messages older than db_ttl_seconds no longer
+#   resolve (the bot can't link them across the bridge). Set to 0 to
+#   disable DB pruning entirely (keep rows forever — historical behavior).
+# max_age_seconds and interval_seconds are floored at 60s.
+# janitor:
+#   max_age_seconds: 3600         # 1 hour
+#   interval_seconds: 1800        # 30 minutes
+#   db_ttl_seconds: 2592000       # 30 days (default)
+
 # Platform credentials
 # Only include the platforms you want to use.
 platforms:
@@ -10,19 +36,146 @@ platforms:
     # bot_token:    # Bot token from @BotFather (starts the client as a bot)
     # phone:        # Phone number in international format e.g. +12025551234
 
+    # Optional: forward only messages containing one of these substrings
+    # (case-insensitive). Accepts a single string OR a list — a message
+    # passes if ANY listed substring is present.
+    # Useful when running as a bot with privacy mode OFF — set this to your
+    # bot's @username so only messages explicitly mentioning the bot are bridged.
+    # The filter also passes through replies whose parent message contained
+    # one of the mentions, and is bypassed entirely for private (DM) chats.
+    # mention_filter: "@your_bot_username"
+    # mention_filter:
+    #   - "@your_bot_username"
+    #   - "!bridge"
+    #   - "#share"
+
+    # Optional: list of Telegram user IDs whose messages always pass through
+    # the bridge, regardless of mention_filter. Useful for the bot owner —
+    # every message you send gets bridged without you having to tag the bot.
+    # Find your user ID via @userinfobot.
+    # always_forward_user_ids: 123456789
+    # always_forward_user_ids:
+    #   - 123456789
+    #   - 987654321
+
+    # Optional: max size (MB) accepted when this platform is the BRIDGE
+    # DESTINATION — i.e. when the bot delivers a bridged message into a
+    # Telegram chat. Files larger than this are transcoded with ffmpeg
+    # to fit (video → H.264, audio → AAC, images recompressed/resized).
+    # Non-media files that exceed the limit get a "too large" notice.
+    # Default 50 = Telegram bot API cap. Userbot mode (phone auth) can go
+    # to 2000. The same setting also caps INBOUND downloads when this
+    # platform is the source: anything above 4× this value is refused
+    # without download (DoS guard) — raise the limit if that bites.
+    # destination_size_limit_mb: 50
+
+    # Optional: voice-message transcription for THIS platform. Two output
+    # toggles, each independent:
+    #   reply_with_transcript  — on a voice note arrival, the bot replies
+    #                            *in the same chat* with the transcript.
+    #                            Local action, never crosses the bridge.
+    #   bridge_with_transcript — when a voice note IS bridged (the normal
+    #                            mention_filter / forward rules), the
+    #                            transcript text rides along as a follow-up
+    #                            on the other side.
+    # Both default off/on respectively; setting both false disables.
+    # Provider "openai" uses the Whisper API (paid, ~$0.006/min, no GPU).
+    # Provider "local" runs faster-whisper on the host CPU (free, slow on
+    # a NAS — install separately: `pip install faster-whisper`).
+    # voice_transcription:
+    #   enabled: true
+    #   provider: openai             # or "local"
+    #   openai_api_key: sk-...        # required if provider=openai
+    #   openai_model: whisper-1       # default whisper-1
+    #   local_model: small            # tiny|base|small|medium|large (for provider=local)
+    #   language: auto                # ISO code (en, ru, …) or "auto"
+    #   max_duration_seconds: 600     # skip voice longer than this (10 min default)
+    #   reply_with_transcript: false  # local reply in source chat
+    #   bridge_with_transcript: true  # include transcript when bridging
+
   discord:
     # Get the token and app ID from:
     # https://discord.com/developers/applications/
     token:
     app_id:
 
+    # Optional: forward only messages containing one of these substrings
+    # (case-insensitive). Accepts a single string OR a list. Same semantics
+    # as Telegram's mention_filter — use the bot's mention syntax
+    # (e.g. "<@123456789012345678>" matches a real @-mention) or any tag.
+    # Bypassed in DM channels.
+    # mention_filter: "<@123456789012345678>"
+    # mention_filter:
+    #   - "<@123456789012345678>"
+    #   - "!bridge"
+
+    # Optional: list of Discord user IDs whose messages always pass through
+    # the bridge, regardless of mention_filter. Right-click a user with
+    # Developer Mode on → "Copy User ID".
+    # always_forward_user_ids: 111222333444555666
+    # always_forward_user_ids:
+    #   - 111222333444555666
+    #   - 777888999000111222
+
+    # Optional: max size (MB) accepted when this platform is the BRIDGE
+    # DESTINATION — i.e. when the bot delivers a bridged message into a
+    # Discord channel. Files larger than this are transcoded with ffmpeg
+    # to fit; non-media that exceed the limit get a "too large" notice.
+    # Match this to your Discord server's actual limit (10 / 25 / 50 / 100 MB
+    # depending on boost level). The same setting also caps INBOUND
+    # downloads when this platform is the source: anything above 4× this
+    # value is refused without download (DoS guard).
+    # destination_size_limit_mb: 10
+
+    # Optional: voice-message transcription for THIS platform — same
+    # schema as Telegram's voice_transcription above. Discord voice
+    # messages are detected via attachment.duration_secs (only present
+    # on real voice notes, not regular audio uploads). Configure
+    # independently of Telegram: you can enable on one side only.
+    # voice_transcription:
+    #   enabled: true
+    #   provider: openai
+    #   openai_api_key: sk-...
+    #   reply_with_transcript: false
+    #   bridge_with_transcript: true
+
 # Bridges
 # Each bridge links two or more platform chats together.
-# Messages arriving on any chat are forwarded to all other chats
-# in the same bridge.
+#
+# Two flavors:
+#  1. Bidirectional — use `platforms:`. Messages on any chat are forwarded to
+#     every other chat in the bridge.
+#  2. Directional — use `from:` and `to:`. Messages on a `from` chat are
+#     forwarded to every `to` chat. Messages on a `to` chat are NOT
+#     forwarded back. (Use this for read-only mirrors.)
+#
 # A platform is only started if it appears in at least one bridge.
+#
+# Per-bridge overrides (each optional, all hot-reloadable):
+#  - mention_filter: same shape as the platform-level key (string or list).
+#    If set on a bridge, it REPLACES the platform-level mention_filter for
+#    that bridge. Set to `[]` to clear the platform default for one bridge.
+#  - always_forward_user_ids: same shape (int or list). Replaces the
+#    platform-level whitelist for that bridge.
+#  - destination_size_limit_mb: replaces the destination platform's default
+#    upload limit for THIS bridge specifically. Useful when one Discord
+#    target is on a boosted server (50/100 MB) and another isn't (10 MB),
+#    or when Nitro vs. non-Nitro recipients need different caps.
+#  - digest: see the dedicated example below.
+#
+# Filter gating model (per bridge):
+#  - If digest is enabled, ALL filters are bypassed — every message
+#    flows into the digest buffer.
+#  - Else if mention_filter is set: only messages whose text or reply
+#    parent contains a mention pass. Users listed in always_forward_user_ids
+#    bypass the filter (always pass regardless of mention).
+#  - Else (no mention_filter): everything passes.
+#
+# Note: an empty always_forward_user_ids list does NOT disable the
+# mention_filter — it just means no users have bypass privilege.
 bridges:
-  - name: my work bridge # You can name it whatever you want, but make each bridge name different to avoid issues
+  # Bidirectional — works in both directions like before.
+  - name: my work bridge # Make each bridge name unique
     platforms:
       telegram: -123456        # Telegram chat ID (include the '-')
       discord: 123456789       # Discord channel ID
@@ -34,9 +187,124 @@ bridges:
       # discord: 987654321 you can comment out/remove the platforms you don't wanna include in the bridge
       whatsapp: 987654321@g.us
 
-  # You can define as many bridges as you like:
-  # - name: my another bridge
-  #   platforms:
-  #     telegram: -654321
+  # Per-bridge filter overrides example.
+  # The bridge below uses its own mention_filter and whitelist, ignoring
+  # whatever is set at the platforms.telegram / platforms.discord level.
+  # - name: noisy channel
+  #   from:
+  #     telegram: -111222
+  #   to:
+  #     discord: 333444
+  #   mention_filter:
+  #     - "!important"
+  #     - "@announce"
+  #   always_forward_user_ids:
+  #     - 111111111             # owner — bypasses mention filter
+  #   destination_size_limit_mb: 50  # this Discord channel is on a Boost-2 server
+
+  # Digest mode: buffer text messages on a DEBOUNCE timer, then flush
+  # the whole batch as one formatted thread to the other side. Media
+  # (photos, videos, files) and reactions still pass through immediately
+  # unless `buffer_media: true` is set.
+  #
+  # Scheduling semantics:
+  #   wait_seconds      — how long to wait after the LAST message in a
+  #                       cycle before flushing. Each new message resets
+  #                       this timer, so a back-and-forth conversation
+  #                       gets bundled into one digest once the chat
+  #                       finally goes quiet for `wait_seconds`.
+  #   max_wait_seconds  — hard cap from the FIRST message in a cycle.
+  #                       Default 180 (3 min). If a channel never goes
+  #                       quiet, the debounce timer would never fire —
+  #                       this guarantees a flush at most every
+  #                       max_wait_seconds. Set 0 to disable (pure
+  #                       debounce, no cap — risky for hyperactive chats).
+  #
+  # Useful for high-volume chats — one digest per natural conversation
+  # gap, rather than dozens of individual cross-posts.
+  # - name: digested news bridge
+  #   from:
+  #     telegram: -123456
+  #   to:
   #     discord: 987654321
-  #     whatsapp: 987654321@g.us
+  #   digest:
+  #     enabled: true
+  #     wait_seconds: 300         # flush after 5 min of silence
+  #     max_wait_seconds: 1800    # but ALWAYS flush at least every 30 min
+  #     buffer_media: false       # default false. If true, media files
+  #                               # are held until the digest fires and
+  #                               # arrive together with the text thread.
+
+  # Link enrichment: when a bridged message contains a supported link,
+  # fetch the post and append its text + media to the OTHER side as a
+  # follow-up. The original message (with the link) is always forwarded
+  # unchanged. Only allowlisted hosts are ever fetched (SSRF guard).
+  # Failures fall back to just the bare link. On digest bridges the
+  # enriched text + media are folded into the same digest, ordered right
+  # after the link by the original message's timestamp.
+  #   X / Twitter: single-post text + media via the free fxtwitter API
+  #     (no thread unroll in this version).
+  #   Facebook:    public video/reel media via yt-dlp (no caption).
+  #   Instagram:   public post/reel media + caption via yt-dlp.
+  #   TikTok:      public video + caption via yt-dlp.
+  # (Instagram/Facebook private or photo-only posts are often login-walled
+  #  and will simply yield nothing.)
+  # - name: link-enriching bridge
+  #   from:
+  #     telegram: -123456
+  #   to:
+  #     discord: 987654321
+  #   enrich:
+  #     enabled: true
+  #     providers: [twitter, facebook, instagram, tiktok]  # which to run
+  #     download_media: true            # download + re-upload media
+  #     max_media_mb: 50                # per-file cap before refusing
+  #     max_links: 3                    # max enriched links per message
+  #     quote_original: true            # reply-to the bridged message that
+  #                                     # contained the link (default true)
+  #     # Most Facebook and Instagram posts are login-walled — yt-dlp can't
+  #     # download them without authentication. Export a Netscape-format
+  #     # cookies.txt from a browser logged into FB/IG (e.g. the
+  #     # "Get cookies.txt" extension), mount it into the container, and
+  #     # point cookies_file at it. Without this, FB/IG usually fall back
+  #     # to just the bare link. (X/TikTok don't need it.)
+  #     cookies_file: /app/dis_to_tg/cookies.txt
+
+  # Directional: Discord channel → Telegram group (one-way)
+  # Replies/messages typed in the Telegram group are NOT sent back to Discord.
+  # - name: discord news mirror
+  #   from:
+  #     discord: 123456789
+  #   to:
+  #     telegram: -123456
+
+  # Directional: Telegram DM → Discord channel (one-way)
+  # Use your personal Telegram user ID (no minus). Find it via @userinfobot.
+  # - name: bot dm mirror
+  #   from:
+  #     telegram: 555555555
+  #   to:
+  #     discord: 999999999
+
+  # Directional: Discord DM → Telegram chat (one-way)
+  # For Discord DMs, put YOUR Discord user ID under `discord:` (right-click
+  # yourself with Developer Mode on → Copy User ID). The bridge will accept
+  # any DM from that user — including Discord's "Forward Message" action.
+  # - name: discord dm to tg
+  #   from:
+  #     discord: 111222333444555666     # your Discord user ID
+  #   to:
+  #     telegram: -123456
+
+  # Directional fan-out: any chat ID may be a list, on either side.
+  # The example below mirrors a Discord channel into two Telegram groups
+  # AND another Discord channel.
+  # - name: announcements
+  #   from:
+  #     discord: 123456789
+  #   to:
+  #     telegram:
+  #       - -100200300
+  #       - -400500600
+  #     discord: 987654321        # single value still works
+  #     # discord: [987654321, 111222333]   # inline list also works

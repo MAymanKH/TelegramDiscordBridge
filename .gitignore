@@ -21,3 +21,9 @@ logs/
 # IDE
 .vscode/
 .idea/
+
+# Local deployment scripts + per-machine env (may contain SSH hosts / paths)
+deploy.ps1
+deploy.sh
+deploy.env.ps1
+deploy.env.sh

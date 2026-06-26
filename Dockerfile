@@ -5,8 +5,14 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
+#  - tzdata: lets the bridge resolve names like "Europe/Berlin" so the
+#    `timezone` setting in settings.yaml renders digest timestamps in
+#    your local time instead of the container default (UTC).
 RUN apt-get update && apt-get install -y \
     gcc \
+    libmagic1 \
+    ffmpeg \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better Docker layer caching
@@ -19,6 +25,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY bridge/ bridge/
 COPY example.settings.yaml .
+
+# Optional build-time stamp — pass via --build-arg GIT_SHA=$(git rev-parse --short HEAD)
+ARG GIT_SHA=""
+ENV BRIDGER_GIT_SHA=$GIT_SHA
 
 # Create directories for persistent data
 RUN mkdir -p /app/messages/telegram /app/messages/discord

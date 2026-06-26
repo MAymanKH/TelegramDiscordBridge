@@ -5,23 +5,35 @@ services:
     build: .
     container_name: telegram-discord-bridge
     restart: unless-stopped
-    
-    # Mount volumes for persistent data
+
     volumes:
-      - ./settings.yaml:/app/settings.yaml:ro  # Read-only config
-      - telegram-sessions:/app/sessions        # Telegram session files
-      - message-data:/app/messages            # Message attachments
-    
-    # Environment variables (optional - can also use settings.yaml)
+      # Config directory (read-only). Put your settings.yaml inside
+      # ./dis_to_tg/ on the host. Mounting the directory (instead of the
+      # single file) lets you keep alternate configs, certs, or per-
+      # deployment overrides next to settings.yaml and bind them all
+      # together with one mount.
+      - ./dis_to_tg:/app/dis_to_tg:ro
+
+      # Persistent message-id mapping DB + ephemeral downloaded media +
+      # transcoder workspace. A single mount covers everything the bridge
+      # writes. Without this, every container Recreate loses bridge.db
+      # and reply chains stop linking across restarts.
+      - message-data:/app/messages
+
+      # Rotating logs (bridge.log, 5 MB x 3 backups). Bind-mounted so you
+      # can tail / inspect them from the host without docker logs.
+      - ./logs:/app/logs
+
     environment:
       - PYTHONUNBUFFERED=1
-    
+      # Point the bridge at the settings file inside the mounted directory.
+      # Override BRIDGER_SETTINGS_PATH if you mount the config dir
+      # somewhere else.
+      - BRIDGER_SETTINGS_PATH=/app/dis_to_tg/settings.yaml
+
     # Optional: Override command for debugging
     # command: python -u main.py
 
-# Named volumes for persistent data
 volumes:
-  telegram-sessions:
-    driver: local
   message-data:
     driver: local
