@@ -69,6 +69,30 @@ platforms:
     # without download (DoS guard) — raise the limit if that bites.
     # destination_size_limit_mb: 50
 
+    # Optional: voice-message transcription for THIS platform. Two output
+    # toggles, each independent:
+    #   reply_with_transcript  — on a voice note arrival, the bot replies
+    #                            *in the same chat* with the transcript.
+    #                            Local action, never crosses the bridge.
+    #   bridge_with_transcript — when a voice note IS bridged (the normal
+    #                            mention_filter / forward rules), the
+    #                            transcript text rides along as a follow-up
+    #                            on the other side.
+    # Both default off/on respectively; setting both false disables.
+    # Provider "openai" uses the Whisper API (paid, ~$0.006/min, no GPU).
+    # Provider "local" runs faster-whisper on the host CPU (free, slow on
+    # a NAS — install separately: `pip install faster-whisper`).
+    # voice_transcription:
+    #   enabled: true
+    #   provider: openai             # or "local"
+    #   openai_api_key: sk-...        # required if provider=openai
+    #   openai_model: whisper-1       # default whisper-1
+    #   local_model: small            # tiny|base|small|medium|large (for provider=local)
+    #   language: auto                # ISO code (en, ru, …) or "auto"
+    #   max_duration_seconds: 600     # skip voice longer than this (10 min default)
+    #   reply_with_transcript: false  # local reply in source chat
+    #   bridge_with_transcript: true  # include transcript when bridging
+
   discord:
     # Get the token and app ID from:
     # https://discord.com/developers/applications/
@@ -102,6 +126,18 @@ platforms:
     # downloads when this platform is the source: anything above 4× this
     # value is refused without download (DoS guard).
     # destination_size_limit_mb: 10
+
+    # Optional: voice-message transcription for THIS platform — same
+    # schema as Telegram's voice_transcription above. Discord voice
+    # messages are detected via attachment.duration_secs (only present
+    # on real voice notes, not regular audio uploads). Configure
+    # independently of Telegram: you can enable on one side only.
+    # voice_transcription:
+    #   enabled: true
+    #   provider: openai
+    #   openai_api_key: sk-...
+    #   reply_with_transcript: false
+    #   bridge_with_transcript: true
 
 # Bridges
 # Each bridge links two or more platform chats together.

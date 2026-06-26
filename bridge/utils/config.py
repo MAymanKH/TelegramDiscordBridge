@@ -78,6 +78,53 @@ def normalize_user_ids(value) -> set[int]:
         except (TypeError, ValueError): continue
     return out
 
+def platform_voice_transcription_config(platform_cfg: dict) -> dict | None:
+    """Return the voice_transcription config for a platform, or None if disabled.
+
+    Schema::
+
+        voice_transcription:
+          enabled: true
+          provider: openai          # or "local"
+          openai_api_key: sk-...
+          openai_model: whisper-1   # optional, default "whisper-1"
+          local_model: small        # optional, default "small" (tiny|base|small|medium|large)
+          language: auto            # ISO code or "auto" (auto-detect)
+          max_duration_seconds: 600 # skip audio longer than this
+          reply_with_transcript: false   # local reply with transcript in source chat
+          bridge_with_transcript: true   # include transcript when bridging the voice
+
+    Returns ``None`` if the key is missing, ``enabled`` is falsy, the
+    provider is unknown, or both output toggles are off (nothing to do)."""
+    raw = platform_cfg.get("voice_transcription")
+    if not raw or not raw.get("enabled"): return None
+    provider = (str(raw.get("provider") or "openai")).strip().lower() or "openai"
+
+    try: max_dur = float(raw.get("max_duration_seconds", 600))
+    except (TypeError, ValueError): max_dur = 600.0
+    if max_dur < 0: max_dur = 0.0
+
+    language = raw.get("language")
+    if language is not None:
+        language = str(language).strip() or None
+
+    reply_with = bool(raw.get("reply_with_transcript", False))
+    bridge_with = bool(raw.get("bridge_with_transcript", True))
+    if not reply_with and not bridge_with: return None
+
+    return {
+        "enabled": True,
+        "provider": provider,
+        "openai_api_key": (str(raw.get("openai_api_key") or "").strip() or None),
+        "openai_model": (str(raw.get("openai_model") or "whisper-1").strip() or "whisper-1"),
+        "local_model": (str(raw.get("local_model") or "small").strip() or "small"),
+        "language": language,
+        "max_duration_seconds": max_dur,
+        "reply_with_transcript": reply_with,
+        "bridge_with_transcript": bridge_with,
+    }
+
+
 def bridge_digest_config(bridge: dict) -> dict | None:
     """Return the digest config for *bridge*, or None if disabled.
 

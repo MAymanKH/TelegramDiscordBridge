@@ -15,8 +15,9 @@ from bridge.utils.config import (
     normalize_user_ids, parse_upload_limit_mb,
     effective_mention_filters, effective_always_forward_user_ids,
     effective_destination_size_limit_bytes,
-    bridge_digest_config,
+    bridge_digest_config, platform_voice_transcription_config,
 )
+from bridge.transcription import get_transcriber
 from bridge.utils.media import get_unique_filepath
 from bridge.utils.transcode import compress_to_fit
 from bridge.utils.logger import get_logger, safe_for_log
@@ -115,10 +116,15 @@ class DiscordPlatform(BasePlatform):
             bridge = self.find_bridge_by_name(bridge_name) if bridge_name else None
             bridge = bridge or {}
 
+            # Voice transcription runs BEFORE the mention/whitelist gate so
+            # reply_with_transcript also fires for voice messages that the
+            # filter would otherwise drop.
+            transcript = await self._maybe_transcribe(message)
+
             # Digest mode: bypass per-user / mention filters so the buffered
             # thread captures every message in the chat.
             if bridge_name and bridge_digest_config(bridge):
-                await self._handle_incoming_message(message)
+                await self._handle_incoming_message(message, transcript=transcript)
                 return
 
             # always_forward_user_ids is a BYPASS list — users on it skip
@@ -127,7 +133,7 @@ class DiscordPlatform(BasePlatform):
             eff_always_forward = effective_always_forward_user_ids(bridge, self._always_forward_user_ids)
             if message.author.id in eff_always_forward:
                 logger.info("Always-forward user %s — bypassing mention filter", message.author.id)
-                await self._handle_incoming_message(message)
+                await self._handle_incoming_message(message, transcript=transcript)
                 return
 
             # Apply mention_filter if configured.
@@ -147,7 +153,7 @@ class DiscordPlatform(BasePlatform):
                 if text_has_mention and not message.attachments and is_mention_only(text, eff_filters):
                     logger.info("Skipping mention-only message %s (no content beyond mention)", message.id)
                     return
-            await self._handle_incoming_message(message)
+            await self._handle_incoming_message(message, transcript=transcript)
 
         @self._bot.event
         async def on_message(message: discord.Message):
@@ -269,7 +275,79 @@ class DiscordPlatform(BasePlatform):
         logger.info("Retro-forwarding parent msg %s for reply context", parent.id)
         await self._handle_incoming_message(parent)
 
-    async def _handle_incoming_message(self, message: discord.Message) -> None:
+    @staticmethod
+    def _voice_attachment(message: discord.Message) -> "discord.Attachment | None":
+        """Return the Discord voice-message attachment, or None.
+
+        Discord marks voice messages by populating ``duration_secs`` on the
+        attachment (regular audio uploads have it unset). Defensive: also
+        accept ``audio/ogg`` content_type when duration_secs isn't present,
+        for older clients."""
+        for att in (message.attachments or []):
+            if getattr(att, "duration_secs", None) is not None:
+                return att
+            ctype = (getattr(att, "content_type", "") or "").lower()
+            if ctype.startswith("audio/ogg") and (att.filename or "").startswith("voice-message"):
+                return att
+        return None
+
+    async def _maybe_transcribe(self, message: discord.Message) -> str | None:
+        """Transcribe a Discord voice message if voice_transcription is on.
+
+        Same shape as the Telegram helper: fires reply_with_transcript
+        locally; returns the transcript only when ``bridge_with_transcript``
+        is set so the caller can attach it to the bridged copy."""
+        att = self._voice_attachment(message)
+        if att is None: return None
+        vt_cfg = platform_voice_transcription_config(self.platform_config)
+        if vt_cfg is None: return None
+
+        dur = getattr(att, "duration_secs", None) or 0
+        max_dur = vt_cfg["max_duration_seconds"]
+        if max_dur and dur > max_dur:
+            logger.info("Voice from %s exceeds %.0fs max — skipping transcription",
+                        safe_for_log(getattr(message.author, "display_name", "?")), max_dur)
+            return None
+
+        transcriber = get_transcriber(vt_cfg)
+        if transcriber is None: return None
+
+        media_dir = platform_media_dir(self.name)
+        os.makedirs(media_dir, exist_ok=True)
+        tmp_path = get_unique_filepath(media_dir, "voice_t", ".ogg")
+        try:
+            await att.save(fp=tmp_path)
+        except (OSError, discord.HTTPException, discord.NotFound) as exc:
+            logger.warning("Failed to download Discord voice for transcription: %s", exc)
+            try: os.remove(tmp_path)
+            except OSError: pass
+            return None
+
+        try:
+            transcript = await transcriber.transcribe(tmp_path, language=vt_cfg.get("language"))
+        finally:
+            try: os.remove(tmp_path)
+            except OSError: pass
+
+        if not transcript: return None
+
+        if vt_cfg.get("reply_with_transcript"):
+            # Local reply on the same Discord channel. discord.py escapes
+            # nothing on send, but message.content is rendered as plain
+            # markdown — we leave the user-supplied transcript as-is here
+            # (it came from Whisper, not from a third party).
+            try:
+                await message.reply(f"🎙️ {transcript[:1900]}", mention_author=False)
+            except (discord.HTTPException, discord.NotFound) as exc:
+                logger.warning("voice transcript local reply failed: %s", exc)
+
+        return transcript if vt_cfg.get("bridge_with_transcript") else None
+
+    async def _handle_incoming_message(
+        self,
+        message: discord.Message,
+        transcript: str | None = None,
+    ) -> None:
         bridge_name = self._resolve_bridge_for_message(message)
         if bridge_name is None: return
 
@@ -409,7 +487,17 @@ class DiscordPlatform(BasePlatform):
                 replied_to_msg_id=replied_to_id,
                 source_ts=source_ts,
             )
-        elif not content and not attachments:
+        # Voice transcript companion (sent only when bridge_with_transcript
+        # is on and we actually got a transcript). Drops into the digest
+        # buffer in digest mode like any other on_message call.
+        if transcript:
+            await self.router.on_message(
+                self.name, bridge_name, message.id,
+                f"🎙️ {transcript}", sender,
+                replied_to_msg_id=replied_to_id,
+                source_ts=source_ts,
+            )
+        if not content and not attachments and not transcript:
             logger.info("Discord message %s has no content and no attachments — nothing to bridge", message.id)
 
     async def _handle_reaction(self, payload: discord.RawReactionActionEvent) -> None:

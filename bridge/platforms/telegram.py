@@ -14,8 +14,9 @@ from bridge.utils.config import (
     normalize_user_ids, parse_upload_limit_mb,
     effective_mention_filters, effective_always_forward_user_ids,
     effective_destination_size_limit_bytes,
-    bridge_digest_config,
+    bridge_digest_config, platform_voice_transcription_config,
 )
+from bridge.transcription import get_transcriber
 from bridge.utils.media import classify_attachment, get_unique_filepath, safe_basename
 from bridge.utils.transcode import compress_to_fit
 from bridge.utils.logger import get_logger, safe_for_log
@@ -188,11 +189,17 @@ class TelegramPlatform(BasePlatform):
             if bridge_name is None: return
             bridge = self.find_bridge_by_name(bridge_name) or {}
 
+            # Voice transcription runs BEFORE the mention/whitelist gate
+            # so reply_with_transcript also fires for voice notes that
+            # would otherwise be filtered out (the common case in a busy
+            # group where the filter requires a bot mention).
+            transcript = await self._maybe_transcribe(client, message)
+
             # Digest mode: bypass all per-user / mention filters so the
             # buffered thread captures the full conversation. The router
             # decides what to do with on_message (immediate vs. buffered).
             if bridge_digest_config(bridge):
-                await self._handle_incoming_message(client, message)
+                await self._handle_incoming_message(client, message, transcript=transcript)
                 return
 
             # always_forward_user_ids is a BYPASS list — users on it skip
@@ -202,7 +209,7 @@ class TelegramPlatform(BasePlatform):
             sender_id = getattr(message.from_user, "id", None) if message.from_user else None
             if sender_id is not None and sender_id in eff_always_forward:
                 logger.info("Always-forward user %s — bypassing mention filter", sender_id)
-                await self._handle_incoming_message(client, message)
+                await self._handle_incoming_message(client, message, transcript=transcript)
                 return
 
             # Apply mention_filter if configured.
@@ -222,7 +229,7 @@ class TelegramPlatform(BasePlatform):
                 if text_has_mention and not message.media and is_mention_only(text, eff_filters):
                     logger.info("Skipping mention-only message %s (no content beyond mention)", message.id)
                     return
-            await self._handle_incoming_message(client, message)
+            await self._handle_incoming_message(client, message, transcript=transcript)
 
         @self._app.on_message()
         async def _on_message(client: Client, message: types.Message):
@@ -271,7 +278,67 @@ class TelegramPlatform(BasePlatform):
         eff = effective_destination_size_limit_bytes(bridge, self._destination_size_limit_bytes)
         return eff * INCOMING_DOWNLOAD_FACTOR
 
-    async def _handle_incoming_message(self, client: Client, message: types.Message) -> None:
+    async def _maybe_transcribe(self, client: Client, message: types.Message) -> str | None:
+        """Transcribe a voice note if voice_transcription is configured.
+
+        Runs before any bridge filter so ``reply_with_transcript`` fires
+        even when the message would be dropped by mention_filter. Returns
+        the plain transcript text (for the caller to attach via
+        ``bridge_with_transcript`` later), or ``None`` if disabled / not a
+        voice / failed."""
+        if not message.voice: return None
+        vt_cfg = platform_voice_transcription_config(self.platform_config)
+        if vt_cfg is None: return None
+
+        duration = getattr(message.voice, "duration", 0) or 0
+        max_dur = vt_cfg["max_duration_seconds"]
+        if max_dur and duration > max_dur:
+            logger.info("Voice from %s exceeds %.0fs max — skipping transcription",
+                        safe_for_log(_get_sender_name(message)), max_dur)
+            return None
+
+        transcriber = get_transcriber(vt_cfg)
+        if transcriber is None: return None
+
+        media_dir = platform_media_dir(self.name)
+        os.makedirs(media_dir, exist_ok=True)
+        tmp_path = get_unique_filepath(media_dir, "voice_t", ".ogg")
+        try:
+            await client.download_media(message, file_name=tmp_path)
+        except Exception as exc:
+            logger.warning("Failed to download voice for transcription: %s", exc)
+            try: os.remove(tmp_path)
+            except OSError: pass
+            return None
+
+        try:
+            transcript = await transcriber.transcribe(tmp_path, language=vt_cfg.get("language"))
+        finally:
+            try: os.remove(tmp_path)
+            except OSError: pass
+
+        if not transcript: return None
+
+        if vt_cfg.get("reply_with_transcript"):
+            # Local reply — never goes through the bridge. The voice is
+            # escaped because Telegram is HTML parse mode by default.
+            try:
+                await self._app.send_message(
+                    message.chat.id,
+                    f"🎙️ {html.escape(transcript)}",
+                    reply_to_message_id=message.id,
+                )
+            except Exception as exc:
+                logger.warning("voice transcript local reply failed: %s", exc)
+
+        return transcript if vt_cfg.get("bridge_with_transcript") else None
+
+    async def _handle_incoming_message(
+        self,
+        client: Client,
+        message: types.Message,
+        transcript: str | None = None,
+    ) -> None:
         bridge_name = self.bridge_name_for_source_chat(message.chat.id)
         if bridge_name is None: return
 
@@ -412,6 +479,15 @@ class TelegramPlatform(BasePlatform):
                     self.name, bridge_name, message.id,
                     message.caption, sender,
                     replied_to_msg_id=message.reply_to_message_id,
+                )
+            # Bridge a transcript companion right after the voice file
+            # (only set when bridge_with_transcript is on and we got text).
+            if transcript and message.voice:
+                await self.router.on_message(
+                    self.name, bridge_name, message.id,
+                    f"🎙️ {transcript}", sender,
+                    replied_to_msg_id=message.reply_to_message_id,
+                    source_ts=source_ts,
                 )
 
         # Plain text

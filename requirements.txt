@@ -9,3 +9,7 @@ neonize>=0.3.15
 #   yt-dlp  — download Facebook (and other) media
 aiohttp>=3.9.0
 yt-dlp>=2024.1.0
+# Voice transcription (optional `voice_transcription:` platform feature):
+#   provider=openai needs no extra dep (uses aiohttp).
+#   provider=local needs faster-whisper — uncomment if you want self-hosted:
+# faster-whisper>=1.0.0
