@@ -282,8 +282,17 @@ class DiscordPlatform(BasePlatform):
         Discord marks voice messages by populating ``duration_secs`` on the
         attachment (regular audio uploads have it unset). Defensive: also
         accept ``audio/ogg`` content_type when duration_secs isn't present,
-        for older clients."""
-        for att in (message.attachments or []):
+        for older clients.
+
+        A "Forward Message" leaves message.attachments empty and stores the
+        payload in message.message_snapshots[0].attachments — same place
+        the bridge unpacks below. We check both so forwarded voice notes
+        still get transcribed."""
+        candidates = list(message.attachments or [])
+        snapshots = getattr(message, "message_snapshots", None) or []
+        if snapshots:
+            candidates += list(getattr(snapshots[0], "attachments", []) or [])
+        for att in candidates:
             if getattr(att, "duration_secs", None) is not None:
                 return att
             ctype = (getattr(att, "content_type", "") or "").lower()

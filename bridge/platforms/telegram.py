@@ -285,12 +285,19 @@ class TelegramPlatform(BasePlatform):
         even when the message would be dropped by mention_filter. Returns
         the plain transcript text (for the caller to attach via
         ``bridge_with_transcript`` later), or ``None`` if disabled / not a
-        voice / failed."""
-        if not message.voice: return None
+        voice / failed.
+
+        Detects both ``message.voice`` (native voice notes) AND
+        ``message.audio`` — forwarded voice memos from some clients
+        (especially iOS share sheet) arrive as audio attachments. The
+        max_duration_seconds guard keeps music files from being
+        accidentally transcribed."""
+        media = message.voice or message.audio
+        if media is None: return None
         vt_cfg = platform_voice_transcription_config(self.platform_config)
         if vt_cfg is None: return None
 
-        duration = getattr(message.voice, "duration", 0) or 0
+        duration = getattr(media, "duration", 0) or 0
         max_dur = vt_cfg["max_duration_seconds"]
         if max_dur and duration > max_dur:
             logger.info("Voice from %s exceeds %.0fs max — skipping transcription",
@@ -482,7 +489,7 @@ class TelegramPlatform(BasePlatform):
                 )
             # Bridge a transcript companion right after the voice file
             # (only set when bridge_with_transcript is on and we got text).
-            if transcript and message.voice:
+            if transcript and (message.voice or message.audio):
                 await self.router.on_message(
                     self.name, bridge_name, message.id,
                     f"🎙️ {transcript}", sender,
